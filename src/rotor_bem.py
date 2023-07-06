@@ -1,7 +1,7 @@
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
-from mit_bem.Turbine2 import IEA15MW
+from mit_bem.Turbine import IEA15MW
 from tqdm import tqdm
 
 figdir = Path("fig")

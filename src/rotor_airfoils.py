@@ -16,7 +16,7 @@ if __name__ == "__main__":
 
     x_mesh, inflow_mesh = np.meshgrid(x, inflow)
 
-    cl, cd = rotor.airfoil(x_mesh, inflow_mesh)
+    cl, cd = rotor.bem.clcd(x_mesh, inflow_mesh)
     fig, axes = plt.subplots(2, 1, sharex=True)
 
     for i, (_cl, _cd) in enumerate(zip(cl.T, cd.T)):
