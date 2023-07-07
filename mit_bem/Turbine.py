@@ -8,6 +8,8 @@ from scipy import interpolate
 from .Utilities import fixedpointiteration
 
 fn_IEA15MW = Path(__file__).parent / "IEA-15-240-RWT.yaml"
+fn_IEA10MW = Path(__file__).parent / "IEA-10-198-RWT.yaml"
+fn_IEA3_4MW = Path(__file__).parent / "IEA-3.4-130-RWT.yaml"
 
 RHO = 1.293
 
@@ -89,7 +91,7 @@ class GenericRotor:
         self.N_r = N_r
         self.N_theta = N_theta
 
-        self.mus = np.linspace(0.01, 0.99, N_r)
+        self.mus = np.linspace(0.01, 0.98, N_r)
 
     def bem(self, a, pitch, tsr, yaw, return_data=False):
         vx = 1 - a
@@ -102,15 +104,14 @@ class GenericRotor:
 
         Cl, Cd = self.clcd(self.mus, aoa)
 
-        Cn, Ctan = np.zeros_like(Cl), np.zeros_like(Cl)
         Cn = Cl * np.cos(phi) + Cd * np.sin(phi)
         Ctan = Cl * np.sin(phi) - Cd * np.cos(phi)
 
         sigma = self.solidity(self.mus)
-        dCt = (1 - a) ** 2 * sigma * Cn / np.sin(phi) ** 2
+        dCt = np.minimum((1 - a) ** 2 * sigma * Cn / np.sin(phi) ** 2, 4)
 
+        a_new = self.Ct2a(dCt / self.tiploss(self.mus, phi))
         a_ring = self.Ct2a(dCt)
-        a_new = a_ring / self.tiploss(self.mus, phi)
 
         if return_data:
             W = np.sqrt(vx**2 + vt**2)
@@ -165,6 +166,8 @@ class GenericRotor:
 class Rotor:
     @classmethod
     def from_windio(cls, windio: dict):
+        name = windio["name"]
+        
         blade = windio["components"]["blade"]
 
         N_blades = windio["assembly"]["number_of_blades"]
@@ -185,9 +188,10 @@ class Rotor:
 
         airfoil_func = BladeAirfoils.from_windio(windio)
 
-        return cls(twist_func, solidity_func, airfoil_func, N_blades, D)
+        return cls(twist_func, solidity_func, airfoil_func, N_blades, D, name=name)
 
-    def __init__(self, twist_func, solidity_func, airfoil_func, N_blades, D):
+    def __init__(self, twist_func, solidity_func, airfoil_func, N_blades, D, name=None):
+        self.name = name
         self.N_blades = N_blades
         self.D = D
         self.R = D / 2
@@ -228,6 +232,20 @@ class Rotor:
 
 def IEA15MW():
     with open(fn_IEA15MW, "r") as f:
+        data = yaml.safe_load(f)
+
+    return Rotor.from_windio(data)
+
+
+def IEA10MW():
+    with open(fn_IEA10MW, "r") as f:
+        data = yaml.safe_load(f)
+
+    return Rotor.from_windio(data)
+
+
+def IEA3_4MW():
+    with open(fn_IEA3_4MW, "r") as f:
         data = yaml.safe_load(f)
 
     return Rotor.from_windio(data)
