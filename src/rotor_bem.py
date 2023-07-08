@@ -27,9 +27,9 @@ if __name__ == "__main__":
         for tsr in tqdm(tsrs):
             ind = rotor.induction(PITCH, tsr, 0)
             data.append(rotor.bem_residual(ind, PITCH, tsr, 0, return_data=True))
-            Cts.append(rotor.Ct(PITCH, tsr, 0))
-            Cps.append(rotor.Cp(PITCH, tsr, 0))
-            a_rots.append(rotor.rotor_induction(PITCH, tsr, 0))
+            Cts.append(rotor.Ct(PITCH, tsr, 0, agg="rotor"))
+            Cps.append(rotor.Cp(PITCH, tsr, 0, agg="rotor"))
+            a_rots.append(rotor.rotor_induction(PITCH, tsr, 0, agg="rotor"))
             # Rs, a_new, phi, W, Cn, Ctan, sigma
 
             # Ct = rotor.Ct(0, tsr, 0)
