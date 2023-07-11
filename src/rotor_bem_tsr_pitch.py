@@ -1,12 +1,22 @@
+from itertools import product, repeat
+from multiprocessing import Pool
 from pathlib import Path
-import numpy as np
+
 import matplotlib.pyplot as plt
-from mit_bem.Turbine import IEA15MW, IEA10MW, IEA3_4MW
+import numpy as np
+import polars as pl
 from tqdm import tqdm
+
+from mit_bem.Turbine import IEA3_4MW, IEA10MW, IEA15MW
+from find_optimal_setpoint import find_optimal
+from power_curve_noyaw import setpoint_trajectory
 
 np.seterr(all="raise")
 figdir = Path("fig")
 figdir.mkdir(exist_ok=True, parents=True)
+
+cachedir = Path("cache")
+cachedir.mkdir(exist_ok=True, parents=True)
 
 
 rotors = {
@@ -16,43 +26,174 @@ rotors = {
 }
 
 
-tsr_min, tsr_max = 3, 15
-pitch_min, pitch_max = np.deg2rad(0), np.deg2rad(10)
-if __name__ == "__main__":
-    
-    for name, rotor in rotors.items():
-        tsrs = np.arange(tsr_min, tsr_max, 0.5)
-        pitches = np.linspace(pitch_min, pitch_max, 20)
+def func_IEA15MW(x):
+    pitch, tsr, yaw = x
+    bem = rotors["IEA15MW"].solve(pitch, tsr, yaw)
+    if bem.status == "converged":
+        Ct = bem.Ct("rotor")
+        Cp = bem.Cp("rotor")
+    else:
+        Ct, Cp = np.nan, np.nan
 
-        tsr_mesh, pitch_mesh = np.meshgrid(tsrs, pitches)
-        params = list(zip(tsr_mesh.ravel(), pitch_mesh.ravel()))
-        Cts = []
-        Cps = []
-        for tsr, pitch in tqdm(params):
-            Cts.append(rotor.Ct(pitch, tsr, 0))
-            Cps.append(rotor.Cp(pitch, tsr, 0))
+    return dict(
+        pitch=np.round(np.rad2deg(pitch), 2),
+        tsr=tsr,
+        yaw=np.round(np.rad2deg(yaw), 2),
+        Ct=Ct,
+        Cp=Cp,
+    )
 
-        Cts = np.reshape(Cts, tsr_mesh.shape)
-        Cps = np.reshape(Cps, tsr_mesh.shape)
 
-        fig, axes = plt.subplots(1, 2, sharey=True)
+def func_IEA10MW(x):
+    pitch, tsr, yaw = x
+    bem = rotors["IEA10MW"].solve(pitch, tsr, yaw)
+    if bem.status == "converged":
+        Ct = bem.Ct("rotor")
+        Cp = bem.Cp("rotor")
+    else:
+        Ct, Cp = np.nan, np.nan
 
+    return dict(
+        pitch=np.round(np.rad2deg(pitch), 2),
+        tsr=tsr,
+        yaw=np.round(np.rad2deg(yaw), 2),
+        Ct=Ct,
+        Cp=Cp,
+    )
+
+
+funcs = {
+    "IEA15MW": func_IEA15MW,
+    "IEA10MW": func_IEA10MW,
+}
+
+
+pitches = np.deg2rad(np.arange(-15, 30, 1))
+tsrs = np.arange(0, 20, 0.5)
+yaws = np.deg2rad(np.arange(0, 30, 10))
+# yaws = [0]
+
+params = list(product(pitches, tsrs, yaws))
+
+
+def for_each(func, params, parallel=True):
+    N = len(params)
+    out = []
+    if parallel:
+        with Pool() as pool:
+            for x in tqdm(
+                pool.imap(
+                    func,
+                    params,
+                ),
+                total=N,
+            ):
+                out.append(x)
+        return out
+    else:
+        for param in tqdm(params):
+            out.append(func(param))
+        return out
+
+
+def get_pitch_tsr_yaw_surface(rotor, cache_fn):
+    if cache_fn.exists():
+        df = pl.read_csv(cache_fn)
+
+    else:
+        df = generate_pitch_tsr_yaw_surface(rotor)
+        df.write_csv(cache_fn)
+
+    return df
+
+
+def generate_pitch_tsr_yaw_surface(func):
+    out = for_each(func, params, parallel=True)
+    df = pl.from_dicts(out)
+
+    return df
+
+
+def plot_surface_ax(
+    pitch, tsr, Z, ax, levels=None, cmap="viridis", vmin=None, vmax=None
+):
+    ax.contourf(pitch, tsr, Z, levels=levels, cmap=cmap, vmin=vmin, vmax=vmax)
+
+    CS = ax.contour(pitch, tsr, Z, levels=levels, colors="k")
+    ax.clabel(CS, inline=True, fontsize=10)
+
+    # [ax.plot(np.rad2deg(pitch_best), tsr_best, "*") for ax in axes]
+
+
+def plot_Cp_Ct_surfaces(pitch, tsr, CP, CT, setpoints=None, Cp_norm=None, save=None):
+    fig, axes = plt.subplots(1, 2, sharey=True)
+    pitch_mesh, tsr_mesh = np.meshgrid(pitch, tsr)
+
+    # Cp
+    if Cp_norm is None:
         levels = np.arange(0, 0.6, 0.05)
-        axes[0].contourf(np.rad2deg(pitch_mesh), tsr_mesh, Cps, levels=levels)
-        axes[1].contourf(np.rad2deg(pitch_mesh), tsr_mesh, Cts)
+    else:
+        CP /= Cp_norm
+        levels = np.arange(0, 1.01, 0.1)
+    plot_surface_ax(pitch_mesh, tsr_mesh, CP, axes[0], levels)
 
-        CS = axes[0].contour(
-            np.rad2deg(pitch_mesh), tsr_mesh, Cps, levels=levels, colors="k"
-        )
-        axes[0].clabel(CS, inline=True, fontsize=10)
+    # CT
+    levels = np.arange(0, 2.1, 0.2)
+    plot_surface_ax(
+        pitch_mesh,
+        tsr_mesh,
+        CT,
+        axes[1],
+        levels=levels,
+        cmap="plasma",
+    )
 
-        CS = axes[1].contour(np.rad2deg(pitch_mesh), tsr_mesh, Cts, colors="k")
-        axes[1].clabel(CS, inline=True, fontsize=10)
+    # Control setpoint trajectory
+    if setpoints:
+        sp_pitch, sp_tsr = setpoints
+        axes[0].plot(sp_pitch, sp_tsr)
+        axes[1].plot(sp_pitch, sp_tsr)
 
-        axes[0].set_title("$C_p$")
-        axes[1].set_title("$C_T$")
+    axes[0].set_title("$C_p$")
+    axes[1].set_title("$C_T$")
 
-        axes[0].set_ylabel("$\lambda$ [-]")
-        [ax.set_xlabel(r"$\theta_p$ [deg]") for ax in axes]
-        plt.savefig(figdir / f"tsr_pitch_{name}.png", dpi=300, bbox_inches="tight")
-        plt.close()
+    axes[0].set_ylabel("$\lambda$ [-]")
+    [ax.set_xlabel(r"$\theta_p$ [deg]") for ax in axes]
+
+    if save:
+        plt.savefig(save, dpi=300, bbox_inches="tight")
+    plt.close()
+
+
+if __name__ == "__main__":
+    for name, func in funcs.items():
+        cache_fn = cachedir / f"tsr_pitch_yaw_{name}.csv"
+
+        tsr_opt, pitch_opt, Cp_opt = find_optimal(rotors[name])
+
+        df_all = get_pitch_tsr_yaw_surface(func, cache_fn)
+        sp_pitch, sp_tsr = setpoint_trajectory(rotors[name])
+
+        for yaw, df in df_all.groupby("yaw"):
+            df_Cp = df.pivot(
+                index="tsr", columns="pitch", values="Cp", aggregate_function=None
+            )
+            df_Ct = df.pivot(
+                index="tsr", columns="pitch", values="Ct", aggregate_function=None
+            )
+
+            tsr = df_Cp["tsr"].to_numpy()
+            pitch = np.array(df_Cp.columns[1:], dtype=float)
+            Cp = df_Cp.to_numpy()[:, 1:]
+            Ct = df_Ct.to_numpy()[:, 1:]
+            fn_out = figdir / f"tsr_pitch_{name}_{yaw}.png"
+
+            plot_Cp_Ct_surfaces(
+                pitch,
+                tsr,
+                Cp,
+                Ct,
+                setpoints=(sp_pitch, sp_tsr),
+                Cp_norm=Cp_opt,
+                save=fn_out,
+            )

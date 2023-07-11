@@ -5,7 +5,7 @@ from . import ThrustInduction
 from . import TipLoss
 import yaml
 from scipy import interpolate
-from .Utilities import fixedpointiteration
+from .BEMCore import GenericRotor
 
 fn_IEA15MW = Path(__file__).parent / "IEA-15-240-RWT.yaml"
 fn_IEA10MW = Path(__file__).parent / "IEA-10-198-RWT.yaml"
@@ -16,11 +16,16 @@ RHO = 1.293
 
 class Airfoil:
     @classmethod
-    def from_windio_airfoil(cls, airfoil: dict):
+    def from_windio_airfoil(cls, airfoil: dict, hub_radius: float, R: float):
         assert len(airfoil["polars"]) == 1
+
+        adjusted_grid = (
+            hub_radius
+            + np.array(airfoil["polars"][0]["c_l"]["grid"]) * (R - hub_radius)
+        ) / R
         return cls(
             airfoil["name"],
-            airfoil["polars"][0]["c_l"]["grid"],
+            adjusted_grid,
             airfoil["polars"][0]["c_l"]["values"],
             airfoil["polars"][0]["c_d"]["values"],
         )
@@ -42,7 +47,7 @@ class Airfoil:
 
 class BladeAirfoils:
     @classmethod
-    def from_windio(cls, windio: dict, N=120):
+    def from_windio(cls, windio: dict, hub_radius, R, N=120):
         blade = windio["components"]["blade"]
         airfoils = windio["airfoils"]
         D = windio["assembly"]["rotor_diameter"]
@@ -51,7 +56,8 @@ class BladeAirfoils:
         airfoil_order = blade["outer_shape_bem"]["airfoil_position"]["labels"]
 
         airfoils = {
-            x["name"]: Airfoil.from_windio_airfoil(x) for x in windio["airfoils"]
+            x["name"]: Airfoil.from_windio_airfoil(x, hub_radius, R)
+            for x in windio["airfoils"]
         }
 
         return cls(D, airfoil_grid, airfoil_order, airfoils, N=N)
@@ -80,192 +86,98 @@ class BladeAirfoils:
         return self.Cl(x, inflow), self.Cd(x, inflow)
 
 
-class GenericRotor:
-    def __init__(self, twist, solidity, clcd, tiploss, Ct2a, N_r=20, N_theta=11):
-        self.twist = twist
-        self.solidity = solidity
-        self.clcd = clcd
-        self.tiploss = tiploss
-        self.Ct2a = Ct2a
-
-        self.N_r = N_r
-        self.N_theta = N_theta
-
-        self.mus = np.linspace(0.01, 0.98, N_r)
-        self.thetas = np.linspace(0.0, 2 * np.pi, N_theta)
-
-        self.theta_mesh, self.mu_mesh = np.meshgrid(self.thetas, self.mus)
-
-    def bem(self, a, pitch, tsr, yaw, return_data=False):
-        vx = 1 - a
-        vt = tsr * self.mu_mesh
-
-        # inflow angle
-        phi = np.arctan2(vx, vt)
-        aoa = phi - self.twist(self.mu_mesh) - pitch
-        aoa = np.clip(aoa, -np.pi / 2, np.pi / 2)
-
-        Cl, Cd = self.clcd(self.mu_mesh, aoa)
-
-        Cn = Cl * np.cos(phi) + Cd * np.sin(phi)
-        Ctan = Cl * np.sin(phi) - Cd * np.cos(phi)
-
-        sigma = self.solidity(self.mu_mesh)
-        dCt = np.minimum((1 - a) ** 2 * sigma * Cn / np.sin(phi) ** 2, 4)
-
-        # aprime = 1 / (4 * np.sin(phi) * np.cos(phi) / (sigma * dCt) - 1)
-        a_new = self.Ct2a(dCt / self.tiploss(self.mu_mesh, phi))
-        a_ring = self.Ct2a(dCt)
-
-        if return_data:
-            W = np.sqrt(vx**2 + vt**2)
-            return a_new - a, (
-                self.mu_mesh,
-                a_new,
-                a_ring,
-                phi,
-                W,
-                Cn,
-                Ctan,
-                dCt,
-                sigma,
-            )
-        else:
-            return a_new - a
-
-    def induction(self, pitch, tsr, yaw):
-        a0 = 1 / 3 * np.ones((self.N_r, self.N_theta))
-        a = fixedpointiteration(
-            self.bem, x0=a0, args=(pitch, tsr, yaw), relax=0.4, maxiter=1000
-        )
-
-        return a
-
-    def Ct(self, pitch, tsr, yaw, agg=None):
-        a = self.induction(pitch, tsr, yaw)
-        _, (mus, a, a_ring, phi, W, Cn, Ctan, dCt, sigma) = self.bem(
-            a, pitch, tsr, yaw, return_data=True
-        )
-        ddCt = W**2 * sigma * Cn
-        if agg == None:
-            return ddCt
-
-        # Integrate over azimuth
-        dCt = 1 / (2 * np.pi) * np.trapz(ddCt, self.theta_mesh, axis=-1)
-        if agg == "azim":
-            return dCt
-
-        # Integrate over rotor
-        Ct = 2 * np.trapz(dCt * self.mus, self.mus)
-        if agg == "rotor":
-            return Ct
-
-        raise ValueError
-
-    def Cp(self, pitch, tsr, yaw, agg=None):
-        a = self.induction(pitch, tsr, yaw)
-        _, (mus, a, a_ring, phi, W, Cn, Ctan, dCt, sigma) = self.bem(
-            a, pitch, tsr, yaw, return_data=True
-        )
-
-        ddCp = tsr * W**2 * sigma * Ctan * mus
-        if agg == None:
-            return ddCp
-
-        # Integrate over azimuth
-        dCp = 1 / (2 * np.pi) * np.trapz(ddCp, self.theta_mesh, axis=-1)
-        if agg == "azim":
-            return dCp
-
-        # Integrate over rotor
-        Cp = 2 * np.trapz(dCp * self.mus, self.mus)
-        if agg == "rotor":
-            return Cp
-        raise ValueError
-
-    def rotor_induction(self, pitch, tsr, yaw, agg=None):
-        dda = self.induction(pitch, tsr, yaw)
-        if agg == None:
-            return dda
-
-        # integrate over azimuth
-        da = 1 / (2 * np.pi) * np.trapz(dda, self.theta_mesh, axis=-1)
-        if agg == "azim":
-            return da
-
-        # Integrate over rotor
-        a = 2 * np.trapz(self.mus * da, self.mus)
-        if agg == "rotor":
-            return a
-
-        raise ValueError
-
-
 class Rotor:
     @classmethod
     def from_windio(cls, windio: dict):
         name = windio["name"]
 
+        P_rated = windio["assembly"]["rated_power"]
+        hub_height = windio["assembly"]["hub_height"]
+        rotorspeed_max = windio["control"]["torque"]["VS_maxspd"]
+        tsr_target = windio["control"]["torque"]["tsr"]
+
+        hub_diameter = windio["components"]["hub"]["diameter"]
+        hub_radius = hub_diameter / 2
+        cone = windio["components"]["hub"]["cone_angle"]  # deg
         blade = windio["components"]["blade"]
+
+        blade_length = blade["outer_shape_bem"]["reference_axis"]["z"]["values"][-1]
 
         N_blades = windio["assembly"]["number_of_blades"]
         D = windio["assembly"]["rotor_diameter"]
 
+        # Rotor radius adjusted to include cone angle and hub diameter
+        R = blade_length * np.cos(np.deg2rad(cone)) + hub_radius
+
         data_twist = blade["outer_shape_bem"]["twist"]
         data_chord = blade["outer_shape_bem"]["chord"]
+
+        # grid including hub center and cone angle
+        twist_grid = (hub_radius + np.array(data_twist["grid"]) * (R - hub_radius)) / R
         twist_func = interpolate.interp1d(
-            data_twist["grid"], data_twist["values"], fill_value="extrapolate"
+            twist_grid, data_twist["values"], fill_value="extrapolate"
         )
+        # grid including hub center and cone angle
+        chord_grid = (hub_radius + np.array(data_chord["grid"]) * (R - hub_radius)) / R
         chord_func = interpolate.interp1d(
-            data_chord["grid"], data_chord["values"], fill_value="extrapolate"
+            chord_grid, data_chord["values"], fill_value="extrapolate"
         )
 
         solidity_func = (
             lambda mu: N_blades * chord_func(mu) / (2 * np.pi * mu * (D / 2))
         )
 
-        airfoil_func = BladeAirfoils.from_windio(windio)
+        airfoil_func = BladeAirfoils.from_windio(windio, hub_radius, R)
 
-        return cls(twist_func, solidity_func, airfoil_func, N_blades, D, name=name)
+        tiploss_func = TipLoss.PrandtlTipAndRootLossGenerator(hub_radius / R)
 
-    def __init__(self, twist_func, solidity_func, airfoil_func, N_blades, D, name=None):
+        return cls(
+            twist_func,
+            solidity_func,
+            airfoil_func,
+            tiploss_func,
+            N_blades,
+            R,
+            P_rated,
+            rotorspeed_max,
+            hub_height,
+            tsr_target,
+            name=name,
+        )
+
+    def __init__(
+        self,
+        twist_func,
+        solidity_func,
+        airfoil_func,
+        tiploss_func,
+        N_blades,
+        R,
+        P_rated,
+        rotorspeed_max,
+        hub_height,
+        tsr_target,
+        name=None,
+    ):
         self.name = name
         self.N_blades = N_blades
-        self.D = D
-        self.R = D / 2
+
+        self.R = R
+        self.P_rated = P_rated
+        self.rotorspeed_max = rotorspeed_max
+        self.hub_height = hub_height
+        self.tsr_target = tsr_target
 
         self.bem = GenericRotor(
             twist_func,
             solidity_func,
             airfoil_func,
-            TipLoss.PrandtlTiploss,
+            tiploss_func,
             ThrustInduction.Ct2a_HAWC2,
         )
 
-    def induction(self, pitch, tsr, yaw):
-        return self.bem.induction(pitch, tsr, yaw)
-
-    def bem_residual(self, a, pitch, tsr, yaw, return_data=False):
-        if return_data:
-            _, data = self.bem.bem(a, pitch, tsr, yaw, return_data=True)
-            return data
-        else:
-            return self.bem.bem(a, pitch, tsr, yaw)
-
-    def Ct(self, pitch, tsr, yaw, agg="rotor"):
-        return self.bem.Ct(pitch, tsr, yaw, agg=agg)
-
-    def Cp(self, pitch, tsr, yaw, agg="rotor"):
-        return self.bem.Cp(pitch, tsr, yaw, agg=agg)
-
-    def rotor_induction(self, pitch, tsr, yaw, agg="rotor"):
-        return self.bem.rotor_induction(pitch, tsr, yaw, agg=agg)
-
-    # def thrust(self, pitch, tsr, yaw, Uinf, rho=RHO):
-    #     return self.Ct(pitch, tsr, yaw) * 0.5 * rho * Uinf**2 * np.pi * self.R**2
-
-    # def power(self, pitch, tsr, yaw, Uinf, rho=RHO):
-    #     return self.Cp(pitch, tsr, yaw) * 0.5 * rho * Uinf**3 * np.pi * self.R**2
+    def solve(self, pitch, tsr, yaw):
+        return self.bem.solve(pitch, tsr, yaw)
 
 
 def IEA15MW():

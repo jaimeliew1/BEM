@@ -2,7 +2,7 @@ from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import root_scalar
-
+import polars as pl
 
 figdir = Path("fig")
 figdir.mkdir(exist_ok=True, parents=True)
@@ -57,8 +57,30 @@ methods = {
     "vortex": CtA_vortex,
     "HAWC2": aCt_HAWC2,
 }
-if __name__ == "__main__":
 
+fn_mike = Path(__file__).parent.parent / "data/yaw_turbU.csv"
+
+
+def load_LES():
+    df = (
+        pl.read_csv(fn_mike)
+        .rename({"": "yaw"})
+        .melt(id_vars="yaw", variable_name="CT_p", value_name="U_d")
+        .select([pl.col("yaw"), pl.col("CT_p").cast(float), pl.col("U_d")])
+    ).with_columns(
+        [
+            (pl.col("CT_p") * pl.col("U_d") ** 2).alias("CT"),
+            ((1 - pl.col("U_d") / np.cos(np.deg2rad(pl.col("yaw"))))).alias("a"),
+        ]
+    )
+    return df
+
+
+def color(angle):
+    return plt.cm.viridis(angle / 60)
+
+
+if __name__ == "__main__":
     yaws = np.deg2rad(np.arange(0, 60, 10))
 
     fig, axes = plt.subplots(1, len(methods), sharey=True, sharex=True, figsize=(10, 4))
@@ -73,7 +95,7 @@ if __name__ == "__main__":
             ax.plot(
                 a,
                 Ct,
-                c=plt.cm.viridis(i / len(yaws)),
+                c=color(np.rad2deg(yaw)),
                 label=f"$\gamma$={np.rad2deg(yaw):2.0f}",
             )
 
@@ -84,4 +106,13 @@ if __name__ == "__main__":
 
     plt.ylim(0, 2)
     plt.xlim(0, 1)
+
+    # Plot LES data
+    df = load_LES()
+    print(df)
+
+    for yaw in df["yaw"].unique():
+        df_ = df.filter(pl.col("yaw") == yaw)
+        axes[0].plot(df_["a"], df_["CT"], "--", c=color(yaw))
+
     plt.savefig(figdir / f"CtA.png", dpi=300, bbox_inches="tight")
