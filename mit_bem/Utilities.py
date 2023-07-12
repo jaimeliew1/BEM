@@ -38,3 +38,19 @@ def fixedpointiteration(
 
     # print(f"niter: {c}")
     return x0
+
+
+def adaptivefixedpointiteration(
+    f: Callable[[np.ndarray, any], np.ndarray],
+    x0: np.ndarray,
+    args=(),
+    eps=0.000001,
+    maxiter=100,
+):
+    for relax in [0.0, 0.3, 0.7, 0.9]:
+        try:
+            ans = fixedpointiteration(f, x0, args, eps, maxiter, relax)
+            return ans
+        except ValueError:
+            pass
+    raise ValueError("max iterations reached.")

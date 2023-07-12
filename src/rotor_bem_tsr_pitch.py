@@ -15,7 +15,9 @@ np.seterr(all="raise")
 figdir = Path("fig")
 figdir.mkdir(exist_ok=True, parents=True)
 
-cachedir = Path("cache")
+METHOD = "standard"
+METHOD = "mike"
+cachedir = Path(f"cache/{METHOD}")
 cachedir.mkdir(exist_ok=True, parents=True)
 
 
@@ -28,12 +30,14 @@ rotors = {
 
 def func_IEA15MW(x):
     pitch, tsr, yaw = x
-    bem = rotors["IEA15MW"].solve(pitch, tsr, yaw)
+    bem = rotors["IEA15MW"].solve(pitch, tsr, yaw, method=METHOD)
     if bem.status == "converged":
         Ct = bem.Ct("rotor")
         Cp = bem.Cp("rotor")
+        Ctprime = bem.Ctprime("rotor")
+        a = bem.a("rotor")
     else:
-        Ct, Cp = np.nan, np.nan
+        Ct, Cp, Ctprime, a = np.nan, np.nan, np.nan, np.nan
 
     return dict(
         pitch=np.round(np.rad2deg(pitch), 2),
@@ -41,17 +45,20 @@ def func_IEA15MW(x):
         yaw=np.round(np.rad2deg(yaw), 2),
         Ct=Ct,
         Cp=Cp,
+        Ctprime=Ctprime,
+        a=a,
     )
 
 
 def func_IEA10MW(x):
     pitch, tsr, yaw = x
-    bem = rotors["IEA10MW"].solve(pitch, tsr, yaw)
+    bem = rotors["IEA10MW"].solve(pitch, tsr, yaw, method=METHOD)
     if bem.status == "converged":
         Ct = bem.Ct("rotor")
         Cp = bem.Cp("rotor")
+        Ctprime = bem.Ctprime("rotor")
     else:
-        Ct, Cp = np.nan, np.nan
+        Ct, Cp, Ctprime = np.nan, np.nan, np.nan
 
     return dict(
         pitch=np.round(np.rad2deg(pitch), 2),
@@ -59,6 +66,7 @@ def func_IEA10MW(x):
         yaw=np.round(np.rad2deg(yaw), 2),
         Ct=Ct,
         Cp=Cp,
+        Ctprime=Ctprime,
     )
 
 
@@ -70,7 +78,7 @@ funcs = {
 
 pitches = np.deg2rad(np.arange(-15, 30, 1))
 tsrs = np.arange(0, 20, 0.5)
-yaws = np.deg2rad(np.arange(0, 30, 10))
+yaws = np.deg2rad(np.arange(0, 50, 10))
 # yaws = [0]
 
 params = list(product(pitches, tsrs, yaws))
@@ -125,8 +133,10 @@ def plot_surface_ax(
     # [ax.plot(np.rad2deg(pitch_best), tsr_best, "*") for ax in axes]
 
 
-def plot_Cp_Ct_surfaces(pitch, tsr, CP, CT, setpoints=None, Cp_norm=None, save=None):
-    fig, axes = plt.subplots(1, 2, sharey=True)
+def plot_Cp_Ct_surfaces(
+    pitch, tsr, CP, CT, CTPrime, setpoints=None, Cp_norm=None, save=None
+):
+    fig, axes = plt.subplots(1, 3, sharey=True)
     pitch_mesh, tsr_mesh = np.meshgrid(pitch, tsr)
 
     # Cp
@@ -148,14 +158,27 @@ def plot_Cp_Ct_surfaces(pitch, tsr, CP, CT, setpoints=None, Cp_norm=None, save=N
         cmap="plasma",
     )
 
+    # CT
+    levels = np.arange(0, 10, 1)
+    plot_surface_ax(
+        pitch_mesh,
+        tsr_mesh,
+        CTPrime,
+        axes[2],
+        levels=levels,
+        cmap="plasma",
+    )
+
     # Control setpoint trajectory
     if setpoints:
         sp_pitch, sp_tsr = setpoints
         axes[0].plot(sp_pitch, sp_tsr)
         axes[1].plot(sp_pitch, sp_tsr)
+        axes[2].plot(sp_pitch, sp_tsr)
 
     axes[0].set_title("$C_p$")
     axes[1].set_title("$C_T$")
+    axes[2].set_title("$C_T'$")
 
     axes[0].set_ylabel("$\lambda$ [-]")
     [ax.set_xlabel(r"$\theta_p$ [deg]") for ax in axes]
@@ -181,19 +204,24 @@ if __name__ == "__main__":
             df_Ct = df.pivot(
                 index="tsr", columns="pitch", values="Ct", aggregate_function=None
             )
+            df_Ctprime = df.pivot(
+                index="tsr", columns="pitch", values="Ctprime", aggregate_function=None
+            )
 
             tsr = df_Cp["tsr"].to_numpy()
             pitch = np.array(df_Cp.columns[1:], dtype=float)
             Cp = df_Cp.to_numpy()[:, 1:]
             Ct = df_Ct.to_numpy()[:, 1:]
-            fn_out = figdir / f"tsr_pitch_{name}_{yaw}.png"
+            Ctprime = df_Ctprime.to_numpy()[:, 1:]
+            fn_out = figdir / f"tsr_pitch_{name}_{METHOD}_{yaw}.png"
 
             plot_Cp_Ct_surfaces(
                 pitch,
                 tsr,
                 Cp,
                 Ct,
+                Ctprime,
                 setpoints=(sp_pitch, sp_tsr),
-                Cp_norm=Cp_opt,
+                # Cp_norm=Cp_opt,
                 save=fn_out,
             )

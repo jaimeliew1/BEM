@@ -22,7 +22,7 @@ pitch_bounds = np.deg2rad(-5), np.deg2rad(5)
 
 
 def find_optimal(
-    rotor, x0=[7, 0], tsr_bounds=(3, 15), pitch_bounds=(np.deg2rad(-5), np.deg2rad(5))
+    rotor, x0=[7, 0], tsr_bounds=(3, 9), pitch_bounds=(np.deg2rad(-3), np.deg2rad(5))
 ):
     def func(x0):
         tsr, pitch = x0

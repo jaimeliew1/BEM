@@ -176,8 +176,13 @@ class Rotor:
             ThrustInduction.Ct2a_HAWC2,
         )
 
-    def solve(self, pitch, tsr, yaw):
-        return self.bem.solve(pitch, tsr, yaw)
+    def solve(self, pitch, tsr, yaw, method="standard"):
+        if method == "standard":
+            return self.bem.solve(pitch, tsr, yaw)
+        elif method == "mike":
+            return self.bem.solve_mike(pitch, tsr, yaw)
+        else:
+            raise ValueError
 
 
 def IEA15MW():

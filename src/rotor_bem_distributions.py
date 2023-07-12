@@ -7,8 +7,9 @@ from tqdm import tqdm
 figdir = Path("fig")
 figdir.mkdir(exist_ok=True, parents=True)
 
-
-tsr_min, tsr_max = 4, 15
+METHOD = "standard"
+# METHOD="mike"
+tsr_min, tsr_max = 4, 12
 PITCH = np.deg2rad(0)
 YAW = np.deg2rad(0)
 
@@ -28,6 +29,7 @@ to_plot = {
     "Cax": [],
     "Ctan": [],
     "Ct": [],
+    "Ctprime": [],
     "Cp": [],
     "Fax": [10, 120],
     "Ftan": [10, 120],
@@ -40,7 +42,7 @@ if __name__ == "__main__":
         tsrs = np.arange(tsr_min, tsr_max, 1)
         data = []
         for tsr in tqdm(tsrs):
-            out = rotor.solve(PITCH, tsr, YAW)
+            out = rotor.solve(PITCH, tsr, YAW, method=METHOD)
             print(out.status)
             data.append(out)
 
@@ -61,7 +63,9 @@ if __name__ == "__main__":
 
         plt.xlim(0, 1)
 
-        plt.savefig(figdir / f"radius_vs {name}.png", dpi=300, bbox_inches="tight")
+        plt.savefig(
+            figdir / f"radius_vs {name}_{METHOD}.png", dpi=300, bbox_inches="tight"
+        )
         plt.close()
 
         fig, axes = plt.subplots(
@@ -76,5 +80,7 @@ if __name__ == "__main__":
         for ax, (key, args) in zip(axes.ravel(), to_plot.items()):
             ax.plot_surface(X, Y, getattr(dat, key)(*args), cmap="viridis")
             ax.set_title(key)
-        plt.savefig(figdir / f"3d_dist_{name}.png", dpi=300, bbox_inches="tight")
+        plt.savefig(
+            figdir / f"3d_dist_{name}_{METHOD}.png", dpi=300, bbox_inches="tight"
+        )
         plt.close()

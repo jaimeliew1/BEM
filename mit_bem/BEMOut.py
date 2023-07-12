@@ -44,6 +44,12 @@ class BEMOut:
         ddCt = self._W**2 * self.solidity * self._Cax
         return aggregate(self.mu, self.theta_grid, ddCt, agg)
 
+    def Ctprime(self, agg=None):
+        Ct = self.Ct(agg=agg)
+        a = self.a(agg=agg)
+        Ctprime = Ct / ((1 - a) ** 2 * np.cos(self.yaw) ** 2)
+        return Ctprime
+
     def Cp(self, agg=None):
         ddCp = self.tsr * self._W**2 * self.solidity * self._Ctan * self.mu_grid
         return aggregate(self.mu, self.theta_grid, ddCp, agg)
