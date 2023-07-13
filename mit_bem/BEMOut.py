@@ -76,7 +76,7 @@ class BEMOut:
         return aggregate(self.mu, self.theta_grid, self._Cax, agg)
 
     def Ctan(self, agg=None):
-        return aggregate(self.mu, self.theta_grid, self._aprime, agg)
+        return aggregate(self.mu, self.theta_grid, self._Ctan, agg)
 
     def Fax(self, U_inf, R, agg=None, rho=1.293):
         dR = np.diff(self.mu)[0] * R

@@ -51,6 +51,7 @@ if __name__ == "__main__":
         fig, axes = plt.subplots(
             len(to_plot), 1, sharex=True, figsize=np.array([4, 10])
         )
+        axes[0].set_title(METHOD)
 
         for i, (tsr, dat) in enumerate(zip(tsrs, data)):
             for ax, (key, args) in zip(axes, to_plot.items()):
@@ -58,6 +59,7 @@ if __name__ == "__main__":
                     dat.mu,
                     getattr(dat, key)(*args, "azim"),
                     color=plt.cm.viridis(i / len(tsrs)),
+                    label=f"{tsr}",
                 )
                 ax.set_ylabel(key)
 

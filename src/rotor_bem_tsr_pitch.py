@@ -134,7 +134,7 @@ def plot_surface_ax(
 
 
 def plot_Cp_Ct_surfaces(
-    pitch, tsr, CP, CT, CTPrime, setpoints=None, Cp_norm=None, save=None
+    pitch, tsr, CP, CT, CTPrime, title=None, setpoints=None, Cp_norm=None, save=None
 ):
     fig, axes = plt.subplots(1, 3, sharey=True)
     pitch_mesh, tsr_mesh = np.meshgrid(pitch, tsr)
@@ -158,7 +158,7 @@ def plot_Cp_Ct_surfaces(
         cmap="plasma",
     )
 
-    # CT
+    # CTprime
     levels = np.arange(0, 10, 1)
     plot_surface_ax(
         pitch_mesh,
@@ -181,6 +181,9 @@ def plot_Cp_Ct_surfaces(
     axes[2].set_title("$C_T'$")
 
     axes[0].set_ylabel("$\lambda$ [-]")
+
+    fig.suptitle(title)
+
     [ax.set_xlabel(r"$\theta_p$ [deg]") for ax in axes]
 
     if save:
@@ -221,6 +224,7 @@ if __name__ == "__main__":
                 Cp,
                 Ct,
                 Ctprime,
+                title=f"$\gamma$={yaw}°",
                 setpoints=(sp_pitch, sp_tsr),
                 # Cp_norm=Cp_opt,
                 save=fn_out,

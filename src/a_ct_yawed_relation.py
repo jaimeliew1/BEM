@@ -58,7 +58,7 @@ methods = {
     "HAWC2": aCt_HAWC2,
 }
 
-fn_mike = Path(__file__).parent.parent / "data/yaw_turbU.csv"
+fn_mike = Path(__file__).parent.parent / "yaw_turbU.csv"
 
 
 def load_LES():
@@ -83,7 +83,9 @@ def color(angle):
 if __name__ == "__main__":
     yaws = np.deg2rad(np.arange(0, 60, 10))
 
-    fig, axes = plt.subplots(1, len(methods), sharey=True, sharex=True, figsize=(10, 4))
+    # fig, axes = plt.subplots(1, len(methods), sharey=True, sharex=True, figsize=(10, 4))
+    fig, axes = plt.subplots(1, 1)
+    axes = [axes]
     for ax, (method, func) in zip(axes, methods.items()):
         for i, yaw in enumerate(yaws):
             if method == "HAWC2":
@@ -96,23 +98,25 @@ if __name__ == "__main__":
                 a,
                 Ct,
                 c=color(np.rad2deg(yaw)),
-                label=f"$\gamma$={np.rad2deg(yaw):2.0f}",
+                label=f"{np.rad2deg(yaw):2.0f}° (AD)",
             )
 
-        ax.set_title(method)
+        # ax.set_title(method)
         ax.set_xlabel("a")
-    axes[-1].legend()
     axes[0].set_ylabel("$C_T$")
 
-    plt.ylim(0, 2)
-    plt.xlim(0, 1)
+    plt.ylim(0, 1.5)
+    plt.xlim(0, 0.5)
 
     # Plot LES data
     df = load_LES()
     print(df)
 
-    for yaw in df["yaw"].unique():
+    for yaw in np.rad2deg(yaws):
         df_ = df.filter(pl.col("yaw") == yaw)
-        axes[0].plot(df_["a"], df_["CT"], "--", c=color(yaw))
+        axes[0].plot(
+            df_["a"], df_["CT"], "--", c=color(yaw), label=f"{yaw:2.0f}° (LES)"
+        )
 
+    axes[-1].legend(title="$\gamma$", ncol=6, fontsize="xx-small")
     plt.savefig(figdir / f"CtA.png", dpi=300, bbox_inches="tight")

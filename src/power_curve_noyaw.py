@@ -15,7 +15,7 @@ tsr_opt = 9.4604
 pitch_opt = np.deg2rad(-2.7197)
 
 METHOD = "standard"
-METHOD = "mike"
+# METHOD = "mike"
 
 
 def setpoint(rotor, U, tsr_target=tsr_opt, pitch_target=pitch_opt):
@@ -51,6 +51,7 @@ def setpoint(rotor, U, tsr_target=tsr_opt, pitch_target=pitch_opt):
         "Ctprime": bem.Ctprime(agg="rotor"),
         "tsr": bem.tsr,
         "rotorspeed": bem.tsr * U / rotor.R,
+        "torque": bem.power(U, rotor.R, agg="rotor") / (bem.tsr * U / rotor.R),
         "pitch": np.rad2deg(bem.pitch),
     }
     return out
@@ -79,8 +80,11 @@ if __name__ == "__main__":
     df = pl.from_dicts(out)
 
     fig, axes = plt.subplots(
-        len(df.columns), 1, sharex=True, figsize=1.5 * np.array([2, 5])
+        len(df.columns), 1, sharex=True, figsize=1.8 * np.array([2, 5])
     )
+
+    axes[0].set_title(METHOD)
+
     axes[-1].set_xlabel("U [m/s]")
     axes[0].set_xlim(Us.min(), Us.max())
     for ax, key in zip(axes, df.columns):
