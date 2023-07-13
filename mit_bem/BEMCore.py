@@ -89,7 +89,7 @@ class GenericRotor:
         else:
             return residual
 
-    def solve(self, pitch, tsr, yaw):
+    def solve(self, pitch, tsr, yaw) -> BEMOut:
         a0 = 1 / 3 * np.ones((self.N_r, self.N_theta))
         aprime0 = np.zeros((self.N_r, self.N_theta))
 
@@ -137,12 +137,16 @@ class GenericRotor:
 
         Ct_rotor = aggregate(self.mus, self.theta_mesh, dCt, agg="rotor")
 
-        a_rotor = (
+        a_target = (
             2 * Ct_rotor
             - 4
             + np.sqrt(-(Ct_rotor**2) * np.sin(yaw) ** 2 - 16 * Ct_rotor + 16)
         ) / (-4 + np.sqrt(-(Ct_rotor**2) * np.sin(yaw) ** 2 - 16 * Ct_rotor + 16))
-        a_new = a_rotor * np.ones_like(a)
+
+        a_new = self.tiploss(self.mu_mesh, phi)
+        a_rotor = aggregate(self.mus, self.theta_mesh, a_new, agg="rotor")
+        a_new *= a_target / a_rotor
+        # a_new = a_target * np.ones_like(a)
 
         residual = np.stack([a_new - a, aprime_new - aprime])
         if return_data:
@@ -169,7 +173,7 @@ class GenericRotor:
         else:
             return residual
 
-    def solve_mike(self, pitch, tsr, yaw):
+    def solve_mike(self, pitch, tsr, yaw) -> BEMOut:
         a0 = 1 / 3 * np.ones((self.N_r, self.N_theta))
         aprime0 = np.zeros((self.N_r, self.N_theta))
 
