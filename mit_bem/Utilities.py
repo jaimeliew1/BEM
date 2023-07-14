@@ -54,3 +54,20 @@ def adaptivefixedpointiteration(
         except ValueError:
             pass
     raise ValueError("max iterations reached.")
+
+
+def aggregate(mu, theta_grid, X, agg):
+    if agg == None:
+        return X
+
+    # Integrate over azimuth
+    X_azim = 1 / (2 * np.pi) * np.trapz(X, theta_grid, axis=-1)
+    if agg == "azim":
+        return X_azim
+
+    # Integrate over rotor
+    X_rotor = 2 * np.trapz(X_azim * mu, mu)
+    if agg == "rotor":
+        return X_rotor
+
+    raise ValueError
