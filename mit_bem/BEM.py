@@ -1,10 +1,12 @@
 import numpy as np
-from .Utilities import fixedpointiteration, aggregate
+from .Utilities import fixedpointiteration, aggregate, adaptivefixedpointiteration
 from . import ThrustInduction, TipLoss
 
 
 class BEM:
-    def __init__(self, rotor, Cta_method="HAWC2", tiploss=None, Nr=20, Ntheta=21):
+    def __init__(
+        self, rotor, Cta_method="mike_corrected", tiploss="tiproot", Nr=20, Ntheta=21
+    ):
         self.rotor = rotor
 
         self.Nr, self.Ntheta = Nr, Ntheta
@@ -21,18 +23,21 @@ class BEM:
             self.Cta_func = ThrustInduction.HAWC2
         elif Cta_method == "mike":
             self.Cta_func = ThrustInduction.mike
+        elif Cta_method == "mike_corrected":
+            self.Cta_func = ThrustInduction.mike_corrected
         else:
-            raise ValueError
+            raise ValueError(f"Cta method {Cta_method} not found.")
 
         if tiploss is None:
             self.tiploss_func = TipLoss.NoTiploss
         elif tiploss == "prandtl":
             self.tiploss_func = TipLoss.PrandtlTiploss
         elif tiploss == "tiproot":
-            raise NotImplementedError
-            # self.tiploss_func = TipLoss.PrandtlTipAndRootLossGenerator
+            self.tiploss_func = TipLoss.PrandtlTipAndRootLossGenerator(
+                self.rotor.hub_radius / self.rotor.R
+            )
         else:
-            raise ValueError
+            raise ValueError(f"tip loss method {tiploss} not found.")
 
         self.reset()
 
@@ -64,12 +69,12 @@ class BEM:
         a_init = np.stack([a0, aprime0])
 
         try:
-            a = fixedpointiteration(self.bem_iterate, x0=a_init, maxiter=100)
-            self.converged = True
-        except ValueError:
-            self.converged = False
+            converged, a = adaptivefixedpointiteration(
+                self.bem_iterate, x0=a_init, maxiter=100
+            )
         except FloatingPointError:
-            self.converged = False
+            converged = False
+        self.converged = converged
 
         return self.converged
 
@@ -89,21 +94,21 @@ class BEM:
 
         # inflow angle
         self._phi = np.arctan2(self._Vax, self._Vtan)
-        self._aoa = self._phi - self.rotor.bem.twist(self.mu_mesh) - self.pitch
+        self._aoa = self._phi - self.rotor.twist(self.mu_mesh) - self.pitch
         self._aoa = np.clip(self._aoa, -np.pi / 2, np.pi / 2)
 
         # Lift and drag coefficients
-        Cl, Cd = self.rotor.bem.clcd(self.mu_mesh, self._aoa)
+        Cl, Cd = self.rotor.clcd(self.mu_mesh, self._aoa)
 
         # axial and tangential force coefficients
         self._Cax = Cl * np.cos(self._phi) + Cd * np.sin(self._phi)
         self._Ctan = Cl * np.sin(self._phi) - Cd * np.cos(self._phi)
 
-        self.solidity = self.rotor.bem.solidity(self.mu_mesh)
+        self.solidity = self.rotor.solidity(self.mu_mesh)
 
         # Tip-loss correction
         self._tiploss = self.tiploss_func(self.mu_mesh, self._phi)
-        Ct, a_new = self.Cta_func(self)
+        a_new = self.Cta_func(self)
 
         # aprime_new = np.zeros_like(aprime)
         aprime_new = 1 / (
@@ -162,66 +167,62 @@ class BEM:
         R = self.rotor.R
         dR = np.diff(self.mu)[0] * R
         dtheta = np.diff(self.theta)[0]
-        if agg == None:
-            return 0.5 * rho * U_inf**2 * self.Cax() * self.mu_mesh * R * dR * dtheta
 
-        # Integrate over azimuth
-        if agg == "azim":
-            return 0.5 * rho * U_inf**2 * self.Cax("azim") * self.mu * R * dR
+        if agg is None or (agg == "rotor"):
+            A = np.pi * R**2
+        elif agg == "azim":
+            A = self.mu * R * dR
+        elif agg == "segment":
+            A = self.mu_mesh * R * dR * dtheta
+        else:
+            ValueError
 
-        # Integrate over rotor
-        if agg == "rotor":
-            return 0.5 * rho * U_inf**2 * self.Cax("rotor") * np.pi * R**2
-
-        raise ValueError
+        return 0.5 * rho * U_inf**2 * self.Cax(agg) * A
 
     def Ftan(self, U_inf, agg=None, rho=1.293):
         R = self.rotor.R
         dR = np.diff(self.mu)[0] * R
         dtheta = np.diff(self.theta)[0]
-        if agg == None:
-            return 0.5 * rho * U_inf**2 * self.Ctan() * self.mu_mesh * R * dR * dtheta
 
-        # Integrate over azimuth
-        if agg == "azim":
-            return 0.5 * rho * U_inf**2 * self.Ctan("azim") * self.mu * R * dR
+        if agg is None or (agg == "rotor"):
+            A = np.pi * R**2
+        elif agg == "azim":
+            A = self.mu * R * dR
+        elif agg == "segment":
+            A = self.mu_mesh * R * dR * dtheta
+        else:
+            ValueError
 
-        # Integrate over rotor
-        if agg == "rotor":
-            return 0.5 * rho * U_inf**2 * self.Ctan("rotor") * np.pi * R**2
-
-        raise ValueError
+        return 0.5 * rho * U_inf**2 * self.Ctan(agg) * A
 
     def thrust(self, U_inf, agg=None, rho=1.293):
         R = self.rotor.R
         dR = np.diff(self.mu)[0] * R
         dtheta = np.diff(self.theta)[0]
-        if agg == None:
-            return 0.5 * rho * U_inf**2 * self.Ct() * self.mu_mesh * R * dR * dtheta
 
-        # Integrate over azimuth
-        if agg == "azim":
-            return 0.5 * rho * U_inf**2 * self.Ct("azim") * self.mu * R * dR
+        if agg is None or (agg == "rotor"):
+            A = np.pi * R**2
+        elif agg == "azim":
+            A = self.mu * R * dR
+        elif agg == "segment":
+            A = self.mu_mesh * R * dR * dtheta
+        else:
+            ValueError
 
-        # Integrate over rotor
-        if agg == "rotor":
-            return 0.5 * rho * U_inf**2 * self.Ct("rotor") * np.pi * R**2
-
-        raise ValueError
+        return 0.5 * rho * U_inf**2 * self.Ct(agg) * A
 
     def power(self, U_inf, agg=None, rho=1.293):
         R = self.rotor.R
         dR = np.diff(self.mu)[0] * R
         dtheta = np.diff(self.theta)[0]
-        if agg == None:
-            return 0.5 * rho * U_inf**3 * self.Cp() * self.mu_mesh * R * dR * dtheta
 
-        # Integrate over azimuth
-        if agg == "azim":
-            return 0.5 * rho * U_inf**3 * self.Cp("azim") * self.mu * R * dR
+        if agg is None or (agg == "rotor"):
+            A = np.pi * R**2
+        elif agg == "azim":
+            A = self.mu * R * dR
+        elif agg == "segment":
+            A = self.mu_mesh * R * dR * dtheta
+        else:
+            ValueError
 
-        # Integrate over rotor
-        if agg == "rotor":
-            return 0.5 * rho * U_inf**3 * self.Cp("rotor") * np.pi * R**2
-
-        raise ValueError
+        return 0.5 * rho * U_inf**3 * self.Cax(agg) * A

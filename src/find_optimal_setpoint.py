@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import minimize
 from mit_bem.Turbine import IEA15MW, IEA10MW, IEA3_4MW
-from tqdm import tqdm
+from mit_bem.BEM import BEM
 
 np.seterr(all="raise")
 figdir = Path("fig")
@@ -26,8 +26,9 @@ def find_optimal(
 ):
     def func(x0):
         tsr, pitch = x0
-        bem = rotor.solve(pitch, tsr, 0)
-        return -bem.Cp(agg="rotor")
+        bem = BEM(rotor, Cta_method="mike_corrected")
+        bem.solve(pitch, tsr, 0)
+        return -bem.Cp()
 
     res = minimize(func, x0, bounds=[tsr_bounds, pitch_bounds])
     tsr_opt, pitch_opt = res.x

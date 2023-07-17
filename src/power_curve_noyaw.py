@@ -6,6 +6,7 @@ import polars as pl
 from tqdm import tqdm
 
 from mit_bem.Turbine import IEA15MW
+from mit_bem.BEM import BEM
 
 figdir = Path("fig")
 figdir.mkdir(exist_ok=True, parents=True)
@@ -13,8 +14,10 @@ figdir.mkdir(exist_ok=True, parents=True)
 # optimal set point for IEA15MW
 tsr_opt = 9.4604
 pitch_opt = np.deg2rad(-2.7197)
+# tsr_opt = 8.701846
+# pitch_opt = -0.062506
 
-METHOD = "standard"
+METHOD = "HAWC2"
 # METHOD = "mike"
 
 
@@ -22,14 +25,17 @@ def setpoint(rotor, U, tsr_target=tsr_opt, pitch_target=pitch_opt):
     tsr_max = rotor.rotorspeed_max * rotor.R / U
     tsr = min(tsr_target, tsr_max)
 
-    bem = rotor.solve(pitch_target, tsr, 0, method=METHOD)
-    power = bem.power(U, rotor.R, agg="rotor")
+    bem = BEM(rotor, Cta_method=METHOD)
+    converged = bem.solve(pitch_target, tsr, 0)
+    # bem = rotor.solve(pitch_target, tsr, 0, method=METHOD)
+    power = bem.power(U, agg="rotor")
 
     if power > rotor.P_rated:
         # find pitch angle which produces rated power
+        bem = BEM(rotor, Cta_method=METHOD)
         def func(pitch):
-            bem = rotor.solve(pitch, tsr, 0)
-            power = bem.power(U, rotor.R, agg="rotor")
+            bem.solve(pitch, tsr, 0)
+            power = bem.power(U, agg="rotor")
             return power - rotor.P_rated
 
         sol = root_scalar(
@@ -39,19 +45,19 @@ def setpoint(rotor, U, tsr_target=tsr_opt, pitch_target=pitch_opt):
             bracket=(pitch_target, np.deg2rad(50)),
         )
         pitch = sol.root
-        bem = rotor.solve(pitch, tsr, 0)
+        bem.solve(pitch, tsr, 0)
 
     out = {
         "U": U,
         "a": bem.a(agg="rotor"),
-        "power": bem.power(U, rotor.R, agg="rotor"),
-        "thrust": bem.thrust(U, rotor.R, agg="rotor"),
+        "power": bem.power(U, agg="rotor"),
+        "thrust": bem.thrust(U, agg="rotor"),
         "Cp": bem.Cp(agg="rotor"),
         "Ct": bem.Ct(agg="rotor"),
         "Ctprime": bem.Ctprime(agg="rotor"),
         "tsr": bem.tsr,
         "rotorspeed": bem.tsr * U / rotor.R,
-        "torque": bem.power(U, rotor.R, agg="rotor") / (bem.tsr * U / rotor.R),
+        "torque": bem.power(U, agg="rotor") / (bem.tsr * U / rotor.R),
         "pitch": np.rad2deg(bem.pitch),
     }
     return out

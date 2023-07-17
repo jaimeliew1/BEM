@@ -13,8 +13,8 @@ if __name__ == "__main__":
 
     x = np.linspace(0, 1, 100)
 
-    twist = rotor.bem.twist(x)
-    solidity = rotor.bem.solidity(x)
+    twist = rotor.twist(x)
+    solidity = rotor.solidity(x)
 
     fig, axes = plt.subplots(2, 1, sharex=True)
     axes[0].plot(x, np.rad2deg(twist))

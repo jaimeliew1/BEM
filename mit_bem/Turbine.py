@@ -1,17 +1,12 @@
 from pathlib import Path
 
 import numpy as np
-from . import ThrustInduction
-from . import TipLoss
 import yaml
 from scipy import interpolate
-from .BEMCore import GenericRotor
 
 fn_IEA15MW = Path(__file__).parent / "IEA-15-240-RWT.yaml"
 fn_IEA10MW = Path(__file__).parent / "IEA-10-198-RWT.yaml"
 fn_IEA3_4MW = Path(__file__).parent / "IEA-3.4-130-RWT.yaml"
-
-RHO = 1.293
 
 
 class Airfoil:
@@ -124,24 +119,22 @@ class Rotor:
         )
 
         solidity_func = (
-            lambda mu: N_blades * chord_func(mu) / (2 * np.pi * mu * (D / 2))
+            lambda mu: np.minimum(N_blades * chord_func(mu) / (2 * np.pi * mu * (D / 2)), 1)
         )
 
         airfoil_func = BladeAirfoils.from_windio(windio, hub_radius, R)
-
-        tiploss_func = TipLoss.PrandtlTipAndRootLossGenerator(hub_radius / R)
 
         return cls(
             twist_func,
             solidity_func,
             airfoil_func,
-            tiploss_func,
             N_blades,
             R,
             P_rated,
             rotorspeed_max,
             hub_height,
             tsr_target,
+            hub_radius,
             name=name,
         )
 
@@ -150,13 +143,13 @@ class Rotor:
         twist_func,
         solidity_func,
         airfoil_func,
-        tiploss_func,
         N_blades,
         R,
         P_rated,
         rotorspeed_max,
         hub_height,
         tsr_target,
+        hub_radius,
         name=None,
     ):
         self.name = name
@@ -167,22 +160,20 @@ class Rotor:
         self.rotorspeed_max = rotorspeed_max
         self.hub_height = hub_height
         self.tsr_target = tsr_target
+        self.hub_radius = hub_radius
 
-        self.bem = GenericRotor(
-            twist_func,
-            solidity_func,
-            airfoil_func,
-            tiploss_func,
-            ThrustInduction.Ct2a_HAWC2,
-        )
+        self.twist_func = twist_func
+        self.solidity_func = solidity_func
+        self.airfoil_func = airfoil_func
 
-    def solve(self, pitch, tsr, yaw, method="standard"):
-        if method == "standard":
-            return self.bem.solve(pitch, tsr, yaw)
-        elif method == "mike":
-            return self.bem.solve_mike(pitch, tsr, yaw)
-        else:
-            raise ValueError
+    def twist(self, mu):
+        return self.twist_func(mu)
+
+    def solidity(self, mu):
+        return self.solidity_func(mu)
+
+    def clcd(self, mu, aoa):
+        return self.airfoil_func(mu, aoa)
 
 
 def IEA15MW():

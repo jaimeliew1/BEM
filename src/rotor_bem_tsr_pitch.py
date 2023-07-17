@@ -8,6 +8,7 @@ import polars as pl
 from tqdm import tqdm
 
 from mit_bem.Turbine import IEA3_4MW, IEA10MW, IEA15MW
+from mit_bem.BEM import BEM
 from find_optimal_setpoint import find_optimal
 from power_curve_noyaw import setpoint_trajectory
 
@@ -15,8 +16,11 @@ np.seterr(all="raise")
 figdir = Path("fig")
 figdir.mkdir(exist_ok=True, parents=True)
 
-METHOD = "standard"
+PARALLEL = True
+METHOD = "HAWC2"
 METHOD = "mike"
+# METHOD = "mike_corrected"
+
 cachedir = Path(f"cache/{METHOD}")
 cachedir.mkdir(exist_ok=True, parents=True)
 
@@ -28,10 +32,12 @@ rotors = {
 }
 
 
-def func_IEA15MW(x):
-    pitch, tsr, yaw = x
-    bem = rotors["IEA15MW"].solve(pitch, tsr, yaw, method=METHOD)
-    if bem.status == "converged":
+def func(x):
+    pitch, tsr, yaw, rotor_name = x
+    bem = BEM(rotors[rotor_name], Cta_method=METHOD, tiploss="prandtl")
+    # bem = rotors["IEA15MW"].solve(pitch, tsr, yaw, method=METHOD)
+    converged = bem.solve(pitch, tsr, yaw)
+    if converged:
         Ct = bem.Ct("rotor")
         Cp = bem.Cp("rotor")
         Ctprime = bem.Ctprime("rotor")
@@ -50,30 +56,30 @@ def func_IEA15MW(x):
     )
 
 
-def func_IEA10MW(x):
-    pitch, tsr, yaw = x
-    bem = rotors["IEA10MW"].solve(pitch, tsr, yaw, method=METHOD)
-    if bem.status == "converged":
-        Ct = bem.Ct("rotor")
-        Cp = bem.Cp("rotor")
-        Ctprime = bem.Ctprime("rotor")
-    else:
-        Ct, Cp, Ctprime = np.nan, np.nan, np.nan
+# def func_IEA10MW(x):
+#     pitch, tsr, yaw = x
+#     bem = rotors["IEA10MW"].solve(pitch, tsr, yaw, method=METHOD)
+#     if bem.status == "converged":
+#         Ct = bem.Ct("rotor")
+#         Cp = bem.Cp("rotor")
+#         Ctprime = bem.Ctprime("rotor")
+#     else:
+#         Ct, Cp, Ctprime = np.nan, np.nan, np.nan
 
-    return dict(
-        pitch=np.round(np.rad2deg(pitch), 2),
-        tsr=tsr,
-        yaw=np.round(np.rad2deg(yaw), 2),
-        Ct=Ct,
-        Cp=Cp,
-        Ctprime=Ctprime,
-    )
+#     return dict(
+#         pitch=np.round(np.rad2deg(pitch), 2),
+#         tsr=tsr,
+#         yaw=np.round(np.rad2deg(yaw), 2),
+#         Ct=Ct,
+#         Cp=Cp,
+#         Ctprime=Ctprime,
+#     )
 
 
-funcs = {
-    "IEA15MW": func_IEA15MW,
-    "IEA10MW": func_IEA10MW,
-}
+# funcs = {
+#     "IEA15MW": func_IEA15MW,
+#     "IEA10MW": func_IEA10MW,
+# }
 
 
 pitches = np.deg2rad(np.arange(-15, 30, 1))
@@ -104,19 +110,20 @@ def for_each(func, params, parallel=True):
         return out
 
 
-def get_pitch_tsr_yaw_surface(rotor, cache_fn):
+def get_pitch_tsr_yaw_surface(rotor_name, cache_fn):
     if cache_fn.exists():
         df = pl.read_csv(cache_fn)
 
     else:
-        df = generate_pitch_tsr_yaw_surface(rotor)
+        df = generate_pitch_tsr_yaw_surface(rotor_name)
         df.write_csv(cache_fn)
 
     return df
 
 
-def generate_pitch_tsr_yaw_surface(func):
-    out = for_each(func, params, parallel=True)
+def generate_pitch_tsr_yaw_surface(rotor_name):
+    _params = [(*p, rotor_name) for p in params]
+    out = for_each(func, _params, parallel=PARALLEL)
     df = pl.from_dicts(out)
 
     return df
@@ -138,7 +145,7 @@ def plot_Cp_Ct_surfaces(
 ):
     fig, axes = plt.subplots(1, 3, sharey=True)
     pitch_mesh, tsr_mesh = np.meshgrid(pitch, tsr)
-
+    idx_tsr, idx_pitch = np.unravel_index(np.nanargmax(CP), CP.shape)
     # Cp
     if Cp_norm is None:
         levels = np.arange(0, 0.6, 0.05)
@@ -146,6 +153,7 @@ def plot_Cp_Ct_surfaces(
         CP /= Cp_norm
         levels = np.arange(0, 1.01, 0.1)
     plot_surface_ax(pitch_mesh, tsr_mesh, CP, axes[0], levels)
+    axes[0].plot(pitch[idx_pitch], tsr[idx_tsr], "*")
 
     # CT
     levels = np.arange(0, 2.1, 0.2)
@@ -192,14 +200,15 @@ def plot_Cp_Ct_surfaces(
 
 
 if __name__ == "__main__":
-    for name, func in funcs.items():
-        cache_fn = cachedir / f"tsr_pitch_yaw_{name}.csv"
+    for rotor_name in rotors.keys():
+        cache_fn = cachedir / f"tsr_pitch_yaw_{rotor_name}.csv"
 
-        tsr_opt, pitch_opt, Cp_opt = find_optimal(rotors[name])
+        # tsr_opt, pitch_opt, Cp_opt = find_optimal(rotors[rotor_name])
 
-        df_all = get_pitch_tsr_yaw_surface(func, cache_fn)
-        sp_pitch, sp_tsr = setpoint_trajectory(rotors[name])
+        df_all = get_pitch_tsr_yaw_surface(rotor_name, cache_fn)
+        # sp_pitch, sp_tsr = setpoint_trajectory(rotors[rotor_name])
 
+        df_all = df_all.filter(pl.col("tsr") != 0)
         for yaw, df in df_all.groupby("yaw"):
             df_Cp = df.pivot(
                 index="tsr", columns="pitch", values="Cp", aggregate_function=None
@@ -216,7 +225,7 @@ if __name__ == "__main__":
             Cp = df_Cp.to_numpy()[:, 1:]
             Ct = df_Ct.to_numpy()[:, 1:]
             Ctprime = df_Ctprime.to_numpy()[:, 1:]
-            fn_out = figdir / f"tsr_pitch_{name}_{METHOD}_{yaw}.png"
+            fn_out = figdir / f"tsr_pitch_{rotor_name}_{METHOD}_{yaw}.png"
 
             plot_Cp_Ct_surfaces(
                 pitch,
@@ -225,7 +234,7 @@ if __name__ == "__main__":
                 Ct,
                 Ctprime,
                 title=f"$\gamma$={yaw}°",
-                setpoints=(sp_pitch, sp_tsr),
+                # setpoints=(sp_pitch, sp_tsr),
                 # Cp_norm=Cp_opt,
                 save=fn_out,
             )

@@ -34,10 +34,10 @@ def fixedpointiteration(
         if np.abs(residuals).max() < eps:
             break
     else:
-        raise ValueError("max iterations reached.")
+        return False, x0
 
     # print(f"niter: {c}")
-    return x0
+    return True, x0
 
 
 def adaptivefixedpointiteration(
@@ -48,16 +48,14 @@ def adaptivefixedpointiteration(
     maxiter=100,
 ):
     for relax in [0.0, 0.3, 0.7, 0.9]:
-        try:
-            ans = fixedpointiteration(f, x0, args, eps, maxiter, relax)
-            return ans
-        except ValueError:
-            pass
-    raise ValueError("max iterations reached.")
+        converged, ans = fixedpointiteration(f, x0, args, eps, maxiter, relax)
+        if converged:
+            return converged, ans
+    return False, ans
 
 
-def aggregate(mu, theta_grid, X, agg):
-    if agg == None:
+def aggregate(mu, theta_grid, X, agg=None):
+    if agg == "segment":
         return X
 
     # Integrate over azimuth
@@ -67,7 +65,7 @@ def aggregate(mu, theta_grid, X, agg):
 
     # Integrate over rotor
     X_rotor = 2 * np.trapz(X_azim * mu, mu)
-    if agg == "rotor":
+    if agg is None or (agg == "rotor"):
         return X_rotor
 
     raise ValueError
