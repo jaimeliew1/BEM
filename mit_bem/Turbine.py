@@ -118,8 +118,8 @@ class Rotor:
             chord_grid, data_chord["values"], fill_value="extrapolate"
         )
 
-        solidity_func = (
-            lambda mu: np.minimum(N_blades * chord_func(mu) / (2 * np.pi * mu * (D / 2)), 1)
+        solidity_func = lambda mu: np.minimum(
+            N_blades * chord_func(mu) / (2 * np.pi * mu * (D / 2)), 1
         )
 
         airfoil_func = BladeAirfoils.from_windio(windio, hub_radius, R)

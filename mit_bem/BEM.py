@@ -74,6 +74,8 @@ class BEM:
             )
         except FloatingPointError:
             converged = False
+        except ValueError:
+            converged = False
         self.converged = converged
 
         return self.converged
