@@ -19,7 +19,7 @@ figdir.mkdir(exist_ok=True, parents=True)
 PARALLEL = True
 METHOD = "HAWC2"
 METHOD = "mike"
-# METHOD = "mike_corrected"
+METHOD = "mike_corrected"
 
 cachedir = Path(f"cache/{METHOD}")
 cachedir.mkdir(exist_ok=True, parents=True)
@@ -27,7 +27,7 @@ cachedir.mkdir(exist_ok=True, parents=True)
 
 rotors = {
     "IEA15MW": IEA15MW(),
-    "IEA10MW": IEA10MW(),
+    # "IEA10MW": IEA10MW(),
     # "IEA3.4MW": IEA3_4MW(),
 }
 
@@ -56,34 +56,8 @@ def func(x):
     )
 
 
-# def func_IEA10MW(x):
-#     pitch, tsr, yaw = x
-#     bem = rotors["IEA10MW"].solve(pitch, tsr, yaw, method=METHOD)
-#     if bem.status == "converged":
-#         Ct = bem.Ct("rotor")
-#         Cp = bem.Cp("rotor")
-#         Ctprime = bem.Ctprime("rotor")
-#     else:
-#         Ct, Cp, Ctprime = np.nan, np.nan, np.nan
-
-#     return dict(
-#         pitch=np.round(np.rad2deg(pitch), 2),
-#         tsr=tsr,
-#         yaw=np.round(np.rad2deg(yaw), 2),
-#         Ct=Ct,
-#         Cp=Cp,
-#         Ctprime=Ctprime,
-#     )
-
-
-# funcs = {
-#     "IEA15MW": func_IEA15MW,
-#     "IEA10MW": func_IEA10MW,
-# }
-
-
-pitches = np.deg2rad(np.arange(-15, 30, 1))
-tsrs = np.arange(0, 20, 0.5)
+pitches = np.deg2rad(np.arange(-15, 50, 1))
+tsrs = np.arange(0, 20, 0.2)
 yaws = np.deg2rad(np.arange(0, 50, 10))
 # yaws = [0]
 

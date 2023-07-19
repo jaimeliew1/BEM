@@ -12,7 +12,7 @@ from mit_bem.BEM import BEM
 
 PARALLEL = True
 ROTOR = IEA15MW()
-DERATE = 0.9
+DERATE = 0.99
 BOUNDS = [0, 1]
 
 tsr_opt, pitch_opt = 8.678696, np.deg2rad(-3.484844)
@@ -73,24 +73,10 @@ def get_derate_setpoint(Cp_target, x0, dx):
     fa = func(BOUNDS[0])
     fb = func(BOUNDS[1])
     if fa * fb > 0:
-        return (
-            np.nan,
-            np.nan,
-            np.nan,
-            np.nan,
-            np.nan,
-            np.nan,
-        )
+        return 6 * [np.nan]
     sol = optimize.root_scalar(func, x0=1, bracket=BOUNDS, xtol=0.0001)
     if not sol.converged:
-        return (
-            np.nan,
-            np.nan,
-            np.nan,
-            np.nan,
-            np.nan,
-            np.nan,
-        )
+        return 6 * [np.nan]
     pitch, tsr, yaw = x0 + sol.root * dx
     bem.solve(pitch, tsr, yaw)
 
@@ -109,6 +95,11 @@ if __name__ == "__main__":
     out = for_each(get_derate_setpoint_wrapper, params, parallel=PARALLEL)
 
     df = pl.DataFrame(out, schema=["pitch", "tsr", "yaw", "Cp", "Ct", "Ctprime"])
+    # df_opt_by_yaw = (
+    #     df.groupby("yaw", maintain_order=True)
+    #     .agg(pl.all().sort_by("Ctprime").first())
+    #     .select(["pitch", "tsr", "yaw"])
+    # )
 
     X = np.reshape(df["pitch"], X.shape)
     Y = np.reshape(df["tsr"], Y.shape)
@@ -117,12 +108,19 @@ if __name__ == "__main__":
     color_val = (Ct - np.nanmin(Ct)) / (np.nanmax(Ct - np.nanmin(Ct)))
     plt.figure()
     ax = plt.axes(projection="3d")
-    ax.plot_surface(X, Y, Z, facecolors=plt.cm.viridis(color_val))
+    ax.plot_surface(
+        X, Y, Z, facecolors=plt.cm.viridis(color_val), shade=False, zorder=2
+    )
 
     ax.set_xlabel("pitch [deg]")
     ax.set_ylabel("$\lambda$ [-]")
-    ax.set_zlabel("yaw [deg]")
+    ax.set_zlabel("|yaw| [deg]")
+    ax.set_title(f"{DERATE*100}% of $C_p$ max")
 
-    ax.view_init(elev=50, azim=60)
+    ax.set_xlim(-10, 5)
+    ax.set_ylim(5, 14)
+    ax.set_zlim(0, 50)
 
-    plt.savefig(figdir / "derate_frontier.png", dpi=300, bbox_inches="tight")
+    ax.view_init(elev=30, azim=-60)
+
+    plt.savefig(figdir / f"derate_frontier_{DERATE}.png", dpi=300, bbox_inches="tight")
