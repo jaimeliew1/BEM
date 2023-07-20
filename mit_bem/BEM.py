@@ -1,13 +1,20 @@
 import numpy as np
 from .Utilities import fixedpointiteration, aggregate, adaptivefixedpointiteration
-from . import ThrustInduction, TipLoss
+from . import ThrustInduction, TipLoss, Windfield
 
 
 class BEM:
     def __init__(
-        self, rotor, Cta_method="mike_corrected", tiploss="tiproot", Nr=20, Ntheta=21
+        self,
+        rotor,
+        windfield=Windfield.Uniform(),
+        Cta_method="mike_corrected",
+        tiploss="tiproot",
+        Nr=20,
+        Ntheta=21,
     ):
         self.rotor = rotor
+        self.windfield = windfield
 
         self.Nr, self.Ntheta = Nr, Ntheta
         self.mu = np.linspace(0.04, 0.98, Nr)
@@ -15,6 +22,7 @@ class BEM:
 
         self.theta_mesh, self.mu_mesh = np.meshgrid(self.theta, self.mu)
 
+        self.U, self.wdir = self._sample_windfield()
         self.pitch = None
         self.tsr = None
         self.yaw = None
@@ -40,6 +48,18 @@ class BEM:
             raise ValueError(f"tip loss method {tiploss} not found.")
 
         self.reset()
+
+    def _sample_windfield(self):
+        # Probable sign error here.
+        Y = self.rotor.R * self.mu_mesh * np.sin(self.theta_mesh)  # lateral
+        Z = self.rotor.hub_height + self.rotor.R * self.mu_mesh * np.cos(
+            self.theta_mesh
+        )  # vertical
+
+        U = self.windfield.wsp(Y, Z)
+        wdir = self.windfield.wdir(Y, Z)
+
+        return U, wdir
 
     def reset(self):
         self._a = 1 / 3 * np.ones((self.Nr, self.Ntheta))
@@ -82,15 +102,17 @@ class BEM:
 
     def bem_iterate(self, a_input):
         self._a, self._aprime = a_input
-        self._Vax = (
+
+        local_yaw = self.wdir - self.yaw
+        self._Vax = self.U * (
             (1 - self._a)
-            * np.cos(self.yaw * np.cos(self.theta_mesh))
-            * np.cos(self.yaw * np.sin(self.theta_mesh))
+            * np.cos(local_yaw * np.cos(self.theta_mesh))
+            * np.cos(local_yaw * np.sin(self.theta_mesh))
         )
-        self._Vtan = (1 + self._aprime) * self.tsr * self.mu_mesh - (
+        self._Vtan = (1 + self._aprime) * self.tsr * self.mu_mesh - self.U * (
             1 - self._a
-        ) * np.cos(self.yaw * np.sin(self.theta_mesh)) * np.sin(
-            self.yaw * np.cos(self.theta_mesh)
+        ) * np.cos(local_yaw * np.sin(self.theta_mesh)) * np.sin(
+            local_yaw * np.cos(self.theta_mesh)
         )
         self._W = np.sqrt(self._Vax**2 + self._Vtan**2)
 
