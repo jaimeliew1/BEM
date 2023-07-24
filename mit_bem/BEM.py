@@ -250,3 +250,9 @@ class BEM:
             ValueError
 
         return 0.5 * rho * U_inf**3 * self.Cax(agg) * A
+
+    def torque(self, U_inf, rho=1.293):
+        R = self.rotor.R
+        rotor_speed = self.tsr * U_inf / R
+
+        return self.power(U_inf, rho=rho) / rotor_speed
