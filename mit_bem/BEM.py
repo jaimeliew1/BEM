@@ -157,6 +157,10 @@ class BEM:
         ddCp = self.tsr * self._W**2 * self.solidity * self._Ctan * self.mu_mesh
         return aggregate(self.mu, self.theta_mesh, ddCp, agg)
 
+    def Cq(self, agg=None):
+        ddCq = self._W**2 * self.solidity * self._Ctan * self.mu_mesh
+        return aggregate(self.mu, self.theta_mesh, ddCq, agg)
+
     def a(self, agg=None):
         return aggregate(self.mu, self.theta_mesh, self._a, agg)
 
@@ -249,7 +253,7 @@ class BEM:
         else:
             ValueError
 
-        return 0.5 * rho * U_inf**3 * self.Cax(agg) * A
+        return 0.5 * rho * U_inf**3 * self.Cp(agg) * A
 
     def torque(self, U_inf, rho=1.293):
         R = self.rotor.R
