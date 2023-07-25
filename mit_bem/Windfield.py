@@ -35,4 +35,4 @@ class ShearVeer:
         return (Z / self.zr) ** self.exp
 
     def wdir(self, Y, Z):
-        return self.dveerdz * (Z - self.z0veer)
+        return np.deg2rad(self.dveerdz * (Z - self.z0veer))
