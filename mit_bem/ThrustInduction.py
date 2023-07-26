@@ -60,3 +60,7 @@ def mike_corrected(bem_obj, ac=1 / 3):
     a_new *= a_target / a_rotor
 
     return a_new
+
+
+def fixed_induction(bem_obj):
+    return 1 / 3 * np.ones_like(bem_obj._a)

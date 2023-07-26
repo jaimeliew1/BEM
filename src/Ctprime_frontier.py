@@ -80,7 +80,7 @@ def get_ctprime_setpoint_wrapper(x):
     dtsr = 5 * np.sin(angle)
 
     return get_ctprime_setpoint(CTPRIME, (pitch_opt, tsr_opt, yaw), (dpitch, dtsr, 0))
-src/rotor_bem_tsr_pitch.py
+
 
 if __name__ == "__main__":
     yaws = np.deg2rad(np.linspace(0, 50, Nyaw))

@@ -4,6 +4,15 @@ from . import ThrustInduction, TipLoss, Windfield
 
 
 class BEM:
+    @classmethod
+    def gridpoints(cls, Nr, Ntheta):
+        mu = np.linspace(0.04, 0.98, Nr)
+        theta = np.linspace(0.0, 2 * np.pi, Ntheta)
+
+        theta_mesh, mu_mesh = np.meshgrid(theta, mu)
+
+        return mu, theta, mu_mesh, theta_mesh
+
     def __init__(
         self,
         rotor,
@@ -17,10 +26,8 @@ class BEM:
         self.windfield = windfield
 
         self.Nr, self.Ntheta = Nr, Ntheta
-        self.mu = np.linspace(0.04, 0.98, Nr)
-        self.theta = np.linspace(0.0, 2 * np.pi, Ntheta)
 
-        self.theta_mesh, self.mu_mesh = np.meshgrid(self.theta, self.mu)
+        self.mu, self.theta, self.mu_mesh, self.theta_mesh = self.gridpoints(Nr, Ntheta)
 
         self.U, self.wdir = self._sample_windfield()
         self.pitch = None
@@ -33,6 +40,8 @@ class BEM:
             self.Cta_func = ThrustInduction.mike
         elif Cta_method == "mike_corrected":
             self.Cta_func = ThrustInduction.mike_corrected
+        elif Cta_method == "fixed":
+            self.Cta_func = ThrustInduction.fixed_induction
         else:
             raise ValueError(f"Cta method {Cta_method} not found.")
 
@@ -260,3 +269,13 @@ class BEM:
         rotor_speed = self.tsr * U_inf / R
 
         return self.power(U_inf, rho=rho) / rotor_speed
+
+    def u4(self):
+        return 1 - 0.5 * self.Ct() / (1 - self.a())
+
+    def v4(self):
+        # POSSIBLE SIGN ERROR
+        return -0.25 * self.Ct() * np.sin(self.yaw)
+
+    def REWS(self):
+        return aggregate(self.mu, self.theta, self.U)
