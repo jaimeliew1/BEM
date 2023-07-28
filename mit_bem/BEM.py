@@ -5,7 +5,7 @@ from . import ThrustInduction, TipLoss, Windfield
 
 class BEM:
     @classmethod
-    def gridpoints(cls, Nr, Ntheta):
+    def calc_gridpoints(cls, Nr, Ntheta):
         mu = np.linspace(0.04, 0.98, Nr)
         theta = np.linspace(0.0, 2 * np.pi, Ntheta)
 
@@ -13,23 +13,32 @@ class BEM:
 
         return mu, theta, mu_mesh, theta_mesh
 
+    def gridpoints_cart(self):
+        """
+        Returns the grid point locations in cartesian coordinates
+        nondimensionialized by rotor radius. Origin is located at hub center.
+        """
+        # Probable sign error here.
+        X = np.zeros_like(self.mu_mesh)
+        Y = self.mu_mesh * np.sin(self.theta_mesh)  # lateral
+        Z = self.mu_mesh * np.cos(self.theta_mesh)  # vertical
+
+        return X, Y, Z
+
     def __init__(
         self,
         rotor,
-        windfield=Windfield.Uniform(),
         Cta_method="mike_corrected",
         tiploss="tiproot",
         Nr=20,
         Ntheta=21,
     ):
         self.rotor = rotor
-        self.windfield = windfield
 
         self.Nr, self.Ntheta = Nr, Ntheta
 
         self.mu, self.theta, self.mu_mesh, self.theta_mesh = self.gridpoints(Nr, Ntheta)
 
-        self.U, self.wdir = self._sample_windfield()
         self.pitch = None
         self.tsr = None
         self.yaw = None
@@ -58,15 +67,13 @@ class BEM:
 
         self.reset()
 
-    def _sample_windfield(self):
-        # Probable sign error here.
-        Y = self.rotor.R * self.mu_mesh * np.sin(self.theta_mesh)  # lateral
-        Z = self.rotor.hub_height + self.rotor.R * self.mu_mesh * np.cos(
-            self.theta_mesh
-        )  # vertical
+    def _sample_windfield(self, windfield):
+        _X, _Y, _Z = self.gridpoints_cart()
+        Y = _Y * self.rotor.R
+        Z = self.rotor.hub_height + self.rotor.R * _Z
 
-        U = self.windfield.wsp(Y, Z)
-        wdir = self.windfield.wdir(Y, Z)
+        U = windfield.wsp(Y, Z)
+        wdir = windfield.wdir(Y, Z)
 
         return U, wdir
 
@@ -84,13 +91,20 @@ class BEM:
         self.solidity = np.zeros((self.Nr, self.Ntheta))
         self.converged = False
 
-    def solve(self, pitch, tsr, yaw, reset=True):
+    def solve(self, pitch, tsr, yaw, windfield=None, reset=True):
         if reset:
             self.reset()
 
         self.pitch = pitch
         self.tsr = tsr
         self.yaw = yaw
+
+        if callable(windfield):
+            self.U, self.wdir = self._sample_windfield(windfield)
+        elif windfield:
+            self.U, self.wdir = windfield
+        else:
+            self.U, self.wdir = np.ones_like(self.mu_mesh), np.zeros_like(self.mu_mesh)
 
         a0 = 1 / 3 * np.ones((self.Nr, self.Ntheta))
         aprime0 = np.zeros((self.Nr, self.Ntheta))
