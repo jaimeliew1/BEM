@@ -13,10 +13,12 @@ class BEM:
 
         return mu, theta, mu_mesh, theta_mesh
 
-    def gridpoints_cart(self):
+    def gridpoints_cart(self, yaw):
         """
         Returns the grid point locations in cartesian coordinates
         nondimensionialized by rotor radius. Origin is located at hub center.
+
+        Note: effect of yaw angle on grid points is not yet implemented.
         """
         # Probable sign error here.
         X = np.zeros_like(self.mu_mesh)
@@ -37,7 +39,7 @@ class BEM:
 
         self.Nr, self.Ntheta = Nr, Ntheta
 
-        self.mu, self.theta, self.mu_mesh, self.theta_mesh = self.gridpoints(Nr, Ntheta)
+        self.mu, self.theta, self.mu_mesh, self.theta_mesh = self.calc_gridpoints(Nr, Ntheta)
 
         self.pitch = None
         self.tsr = None
@@ -68,7 +70,7 @@ class BEM:
         self.reset()
 
     def _sample_windfield(self, windfield):
-        _X, _Y, _Z = self.gridpoints_cart()
+        _X, _Y, _Z = self.gridpoints_cart(self.yaw)
         Y = _Y * self.rotor.R
         Z = self.rotor.hub_height + self.rotor.R * _Z
 
