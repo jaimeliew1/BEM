@@ -6,7 +6,7 @@ from . import ThrustInduction, TipLoss, Windfield
 class BEM:
     @classmethod
     def calc_gridpoints(cls, Nr, Ntheta):
-        mu = np.linspace(0.04, 0.98, Nr)
+        mu = np.linspace(0.0, 1.0, Nr)
         theta = np.linspace(0.0, 2 * np.pi, Ntheta)
 
         theta_mesh, mu_mesh = np.meshgrid(theta, mu)
@@ -147,11 +147,11 @@ class BEM:
         self._aoa = np.clip(self._aoa, -np.pi / 2, np.pi / 2)
 
         # Lift and drag coefficients
-        Cl, Cd = self.rotor.clcd(self.mu_mesh, self._aoa)
+        self._Cl, self._Cd = self.rotor.clcd(self.mu_mesh, self._aoa)
 
         # axial and tangential force coefficients
-        self._Cax = Cl * np.cos(self._phi) + Cd * np.sin(self._phi)
-        self._Ctan = Cl * np.sin(self._phi) - Cd * np.cos(self._phi)
+        self._Cax = self._Cl * np.cos(self._phi) + self._Cd * np.sin(self._phi)
+        self._Ctan = self._Cl * np.sin(self._phi) - self._Cd * np.cos(self._phi)
 
         self.solidity = self.rotor.solidity(self.mu_mesh)
 
@@ -159,10 +159,10 @@ class BEM:
         self._tiploss = self.tiploss_func(self.mu_mesh, self._phi)
         a_new = self.Cta_func(self)
 
-        # aprime_new = np.zeros_like(aprime)
-        aprime_new = 1 / (
-            4 * np.sin(self._phi) * np.cos(self._phi) / (self.solidity * self._Ctan) - 1
-        )
+        aprime_new = np.zeros_like(self._a)
+        # aprime_new = 1 / (
+        #     4 * np.sin(self._phi) * np.cos(self._phi) / (self.solidity * self._Ctan) - 1
+        # )
 
         residual = np.stack([a_new - self._a, aprime_new - self._aprime])
 
@@ -215,6 +215,12 @@ class BEM:
 
     def Ctan(self, agg=None):
         return aggregate(self.mu, self.theta_mesh, self._Ctan, agg)
+
+    def Cl(self, agg=None):
+        return aggregate(self.mu, self.theta_mesh, self._Cl, agg)
+
+    def Cd(self, agg=None):
+        return aggregate(self.mu, self.theta_mesh, self._Cd, agg)
 
     def Fax(self, U_inf, agg=None, rho=1.293):
         R = self.rotor.R

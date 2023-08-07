@@ -23,7 +23,7 @@ def PrandtlTipAndRootLossGenerator(R_hub, B=3):
             2 / np.pi * np.arccos(np.clip(np.exp(-np.clip(f_hub, -100, 100)), -1, 1))
         )
 
-        return np.maximum(F_hub * F_tip, 0.01)
+        return np.maximum(F_hub * F_tip, 0.00001)
 
     return func
 

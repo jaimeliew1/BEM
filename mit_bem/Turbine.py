@@ -11,16 +11,13 @@ fn_IEA3_4MW = Path(__file__).parent / "IEA-3.4-130-RWT.yaml"
 
 class Airfoil:
     @classmethod
-    def from_windio_airfoil(cls, airfoil: dict, hub_radius: float, R: float):
+    def from_windio_airfoil(cls, airfoil: dict, R: float):
         assert len(airfoil["polars"]) == 1
 
-        adjusted_grid = (
-            hub_radius
-            + np.array(airfoil["polars"][0]["c_l"]["grid"]) * (R - hub_radius)
-        ) / R
+        grid = np.array(airfoil["polars"][0]["c_l"]["grid"])
         return cls(
             airfoil["name"],
-            adjusted_grid,
+            grid,
             airfoil["polars"][0]["c_l"]["values"],
             airfoil["polars"][0]["c_d"]["values"],
         )
@@ -48,14 +45,14 @@ class BladeAirfoils:
         D = windio["assembly"]["rotor_diameter"]
 
         airfoil_grid = np.array(blade["outer_shape_bem"]["airfoil_position"]["grid"])
+        airfoil_grid_adjusted = (hub_radius + airfoil_grid * (R - hub_radius)) / R
         airfoil_order = blade["outer_shape_bem"]["airfoil_position"]["labels"]
 
         airfoils = {
-            x["name"]: Airfoil.from_windio_airfoil(x, hub_radius, R)
-            for x in windio["airfoils"]
+            x["name"]: Airfoil.from_windio_airfoil(x, R) for x in windio["airfoils"]
         }
 
-        return cls(D, airfoil_grid, airfoil_order, airfoils, N=N)
+        return cls(D, airfoil_grid_adjusted, airfoil_order, airfoils, N=N)
 
     def __init__(self, D, airfoil_grid, airfoil_order, airfoils, N=120):
         self.D = D
@@ -65,10 +62,10 @@ class BladeAirfoils:
         cd = np.array([airfoils[name].Cd(aoa_grid) for name in airfoil_order])
 
         self.cl_interp = interpolate.RegularGridInterpolator(
-            (airfoil_grid, aoa_grid), cl, fill_value=None
+            (airfoil_grid, aoa_grid), cl, bounds_error=False, fill_value=None
         )
         self.cd_interp = interpolate.RegularGridInterpolator(
-            (airfoil_grid, aoa_grid), cd, fill_value=None
+            (airfoil_grid, aoa_grid), cd, bounds_error=False, fill_value=None
         )
 
     def Cl(self, x, inflow):
