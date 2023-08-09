@@ -14,11 +14,11 @@ def PrandtlTipAndRootLossGenerator(R_hub, B=3):
     """
 
     def func(mu, phi):
-        f_tip = B / 2 * (1 - mu) / (mu * np.abs(np.sin(phi)))
+        f_tip = B / 2 * (1 - mu) / (np.maximum(mu, 0.0001) * np.abs(np.sin(phi)))
         F_tip = (
             2 / np.pi * np.arccos(np.clip(np.exp(-np.clip(f_tip, -100, 100)), -1, 1))
         )
-        f_hub = B / 2 * (mu - R_hub) / (mu * np.abs(np.sin(phi)))
+        f_hub = B / 2 * (mu - R_hub) / (np.maximum(mu, 0.0001)  * np.abs(np.sin(phi)))
         F_hub = (
             2 / np.pi * np.arccos(np.clip(np.exp(-np.clip(f_hub, -100, 100)), -1, 1))
         )

@@ -1,5 +1,5 @@
 import numpy as np
-from .Utilities import fixedpointiteration, aggregate, adaptivefixedpointiteration
+from .Utilities import aggregate, adaptivefixedpointiteration
 from . import ThrustInduction, TipLoss, Windfield
 
 
@@ -7,7 +7,7 @@ class BEM:
     @classmethod
     def calc_gridpoints(cls, Nr, Ntheta):
         mu = np.linspace(0.0, 1.0, Nr)
-        theta = np.linspace(0.0, 2 * np.pi, Ntheta)
+        theta = np.linspace(0.0, 2 * np.pi, Ntheta + 1)[:-1]
 
         theta_mesh, mu_mesh = np.meshgrid(theta, mu)
 
@@ -71,8 +71,8 @@ class BEM:
 
     def _sample_windfield(self, windfield):
         _X, _Y, _Z = self.gridpoints_cart(self.yaw)
-        Y = _Y * self.rotor.R
-        Z = self.rotor.hub_height + self.rotor.R * _Z
+        Y = _Y
+        Z = self.rotor.hub_height / self.rotor.R  + _Z
 
         U = windfield.wsp(Y, Z)
         wdir = windfield.wdir(Y, Z)
@@ -93,7 +93,7 @@ class BEM:
         self.solidity = np.zeros((self.Nr, self.Ntheta))
         self.converged = False
 
-    def solve(self, pitch, tsr, yaw, windfield=None, reset=True):
+    def solve(self, pitch: float, tsr: float, yaw: float, windfield=None, reset=True) -> bool:
         if reset:
             self.reset()
 
@@ -157,12 +157,10 @@ class BEM:
 
         # Tip-loss correction
         self._tiploss = self.tiploss_func(self.mu_mesh, self._phi)
+
         a_new = self.Cta_func(self)
 
         aprime_new = np.zeros_like(self._a)
-        # aprime_new = 1 / (
-        #     4 * np.sin(self._phi) * np.cos(self._phi) / (self.solidity * self._Ctan) - 1
-        # )
 
         residual = np.stack([a_new - self._a, aprime_new - self._aprime])
 

@@ -13,29 +13,33 @@ class Uniform:
         # Y is lateral, Z is vertical.
         return np.zeros_like(Z)
 
+    def __call__(self, Y, Z):
+        return self.wsp(Y, Z), self.wdir(Y, Z)
+
 
 class ShearVeer:
-    def __init__(self, zr, exp, dveerdz, z0veer):
+    def __init__(self, z0, exp, dveerdz):
         """
         Preliminary parameterisations for wind shear and veer.
         Assumes power law shear and linear veer.
 
         args:
-        zr (float): reference height (m) for wind shear
+        zr (float): reference height (-) nondimensionalized by rotor radius
         exp (float): shear exponent
-        dveerdz (float): rate of change of veer angle (rad) per vertical meters.
-        z0veer (float): height (m) where veer is 0.
+        dveerdz (float): change in veer angle (rad) per rotor radius.
         """
-        self.zr = zr
+        self.z0 = z0
         self.exp = exp
         self.dveerdz = dveerdz
-        self.z0veer = z0veer
 
     def wsp(self, Y, Z):
-        return (Z / self.zr) ** self.exp
+        return (Z / self.z0) ** self.exp
 
     def wdir(self, Y, Z):
-        return np.deg2rad(self.dveerdz * (Z - self.z0veer))
+        return np.deg2rad(self.dveerdz * (Z - self.z0))
+
+    def __call__(self, Y, Z):
+        return self.wsp(Y, Z), self.wdir(Y, Z)
 
 
 class Custom:
@@ -58,3 +62,6 @@ class Custom:
         assert Z.shape == self._U.shape
 
         return self._wdir
+
+    def __call__(self, Y, Z):
+        return self.wsp(Y, Z), self.wdir(Y, Z)

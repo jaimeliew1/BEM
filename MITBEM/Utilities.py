@@ -68,4 +68,4 @@ def aggregate(mu, theta_grid, X, agg=None):
     if agg is None or (agg == "rotor"):
         return X_rotor
 
-    raise ValueError
+    raise ValueError(f"agg method ({agg}) not one of segment, azim, or rotor")

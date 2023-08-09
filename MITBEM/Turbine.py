@@ -1,12 +1,5 @@
-from pathlib import Path
-
 import numpy as np
-import yaml
 from scipy import interpolate
-
-fn_IEA15MW = Path(__file__).parent / "IEA-15-240-RWT.yaml"
-fn_IEA10MW = Path(__file__).parent / "IEA-10-198-RWT.yaml"
-fn_IEA3_4MW = Path(__file__).parent / "IEA-3.4-130-RWT.yaml"
 
 
 class Airfoil:
@@ -116,7 +109,8 @@ class Rotor:
         )
 
         solidity_func = lambda mu: np.minimum(
-            N_blades * chord_func(mu) / (2 * np.pi * mu * (D / 2)), 1
+            N_blades * chord_func(mu) / (2 * np.pi * np.maximum(mu, 0.0001) * (D / 2)),
+            1,
         )
 
         airfoil_func = BladeAirfoils.from_windio(windio, hub_radius, R)
@@ -171,24 +165,3 @@ class Rotor:
 
     def clcd(self, mu, aoa):
         return self.airfoil_func(mu, aoa)
-
-
-def IEA15MW():
-    with open(fn_IEA15MW, "r") as f:
-        data = yaml.safe_load(f)
-
-    return Rotor.from_windio(data)
-
-
-def IEA10MW():
-    with open(fn_IEA10MW, "r") as f:
-        data = yaml.safe_load(f)
-
-    return Rotor.from_windio(data)
-
-
-def IEA3_4MW():
-    with open(fn_IEA3_4MW, "r") as f:
-        data = yaml.safe_load(f)
-
-    return Rotor.from_windio(data)
