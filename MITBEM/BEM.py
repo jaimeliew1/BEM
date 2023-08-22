@@ -7,7 +7,7 @@ class BEM:
     @classmethod
     def calc_gridpoints(cls, Nr, Ntheta):
         mu = np.linspace(0.0, 1.0, Nr)
-        theta = np.linspace(0.0, 2 * np.pi, Ntheta + 1)[:-1]
+        theta = np.linspace(0.0, 2 * np.pi, Ntheta)
 
         theta_mesh, mu_mesh = np.meshgrid(theta, mu)
 

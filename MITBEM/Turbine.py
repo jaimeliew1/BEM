@@ -109,7 +109,7 @@ class Rotor:
         )
 
         solidity_func = lambda mu: np.minimum(
-            N_blades * chord_func(mu) / (2 * np.pi * np.maximum(mu, 0.0001) * (D / 2)),
+            N_blades * chord_func(mu) / (2 * np.pi * np.maximum(mu, 0.0001) * R),
             1,
         )
 
