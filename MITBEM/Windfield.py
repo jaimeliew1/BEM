@@ -31,7 +31,7 @@ class ShearVeer:
         self.z0 = z0
         self.exp = exp
         self.dveerdz = dveerdz
-        
+
     def wsp(self, Y, Z):
         return (Z / self.z0) ** self.exp
 

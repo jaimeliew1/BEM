@@ -6,7 +6,7 @@ import polars as pl
 from scipy.optimize import root_scalar
 from tqdm import tqdm
 
-from MITBEM.BEM import BEM
+from MITBEM.BEM import BEMSolver
 from MITBEM.ReferenceTurbines import IEA15MW
 from example_04_optimal_setpoint import calc_optimal_setpoint
 
@@ -14,22 +14,21 @@ FIGDIR = Path("fig")
 FIGDIR.mkdir(exist_ok=True, parents=True)
 
 ROTOR = IEA15MW()
+bem = BEMSolver(ROTOR)
 
 
 def setpoint(rotor, U, pitch_target, tsr_target):
     tsr_max = rotor.rotorspeed_max * rotor.R / U
     tsr = min(tsr_target, tsr_max)
 
-    bem = BEM(rotor)
-    bem.solve(pitch_target, tsr, 0)
-    power = bem.power(U)
+    sol = bem.solve(pitch_target, tsr, 0)
+    power = sol.power(U)
 
     if power > rotor.P_rated:
         # find pitch angle which produces rated power
 
         def func(pitch):
-            bem.solve(pitch, tsr, 0)
-            power = bem.power(U)
+            power = bem.solve(pitch, tsr).power(U)
             return power - rotor.P_rated
 
         sol = root_scalar(
@@ -39,18 +38,18 @@ def setpoint(rotor, U, pitch_target, tsr_target):
             bracket=(pitch_target, np.deg2rad(50)),
         )
         pitch = sol.root
-        bem.solve(pitch, tsr, 0)
+        sol = bem.solve(pitch, tsr)
 
     out = {
         "U": U,
-        "pitch\n[deg]": np.rad2deg(bem.pitch),
-        "Torque\n[kNm]": bem.power(U) / (bem.tsr * U / rotor.R) / 10e3,
-        "Rotor Speed\n[rad/s]": bem.tsr * U / rotor.R,
-        "Power\n[MW]": bem.power(U) / 10e6,
-        "Thrust\n[kN]": bem.thrust(U) / 10e3,
-        "TSR": bem.tsr,
-        "$C_p$": bem.Cp(agg="rotor"),
-        "$C_T$": bem.Ct(agg="rotor"),
+        "pitch\n[deg]": np.rad2deg(sol.pitch),
+        "Torque\n[kNm]": sol.torque(U) / 10e3,
+        "Rotor Speed\n[rad/s]": sol.tsr * U / rotor.R,
+        "Power\n[MW]": sol.power(U) / 10e6,
+        "Thrust\n[kN]": sol.thrust(U) / 10e3,
+        "TSR": sol.tsr,
+        "$C_p$": sol.Cp(agg="rotor"),
+        "$C_T$": sol.Ct(agg="rotor"),
     }
     return out
 

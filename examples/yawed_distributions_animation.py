@@ -2,11 +2,13 @@ from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
-from MITBEM.BEM import BEMSolver
+from MITBEM.BEM import BEM
 from MITBEM.ReferenceTurbines import IEA15MW
 
-FIGDIR = Path("fig")
+
+FIGDIR = Path("fig/yawed_distributions")
 FIGDIR.mkdir(exist_ok=True, parents=True)
 
 labels = {
@@ -27,17 +29,9 @@ labels = {
 
 def plot_3d_distributions(bem, save=None):
     to_plot = {
-        "a": bem.a(agg="segment"),
-        "phi": bem.phi(agg="segment"),
-        "Vax": bem.Vax(agg="segment"),
-        "Vtan": bem.Vtan(agg="segment"),
-        "W": bem.W(agg="segment"),
         "Cax": bem.Cax(agg="segment"),
         "Ctan": bem.Ctan(agg="segment"),
-        "Cl": bem.Cl(agg="segment"),
-        "Cd": bem.Cd(agg="segment"),
         "Ct": bem.Ct(agg="segment"),
-        "Ctprime": bem.Ctprime(agg="segment"),
         "Cp": bem.Cp(agg="segment"),
     }
     r_mesh, theta_mesh = bem.mu_mesh, bem.theta_mesh
@@ -53,14 +47,14 @@ def plot_3d_distributions(bem, save=None):
     x_mesh, y_mesh = r_mesh * np.cos(theta_mesh), r_mesh * np.sin(theta_mesh)
 
     # Set up subplots and spacing
-    fig, axes = plt.subplots(4, 3, subplot_kw=dict(projection="3d"), figsize=(8, 6))
+    fig, axes = plt.subplots(2, 2, subplot_kw=dict(projection="3d"), figsize=(8, 6))
     fig.tight_layout()
     plt.subplots_adjust(wspace=-0.6)
 
     # Plot each surface. Remove axes
     for ax, (key, vals) in zip(axes.ravel(), to_plot.items()):
         vals[r_mesh > 0.98] = np.nan
-        ax.plot_surface(x_mesh, y_mesh, vals, cmap="viridis", linewidth=0)
+        ax.plot_surface(x_mesh, y_mesh, vals, cmap="viridis", lw=0)
         ax.set_title(labels[key])
         ax.set_axis_off()
 
@@ -70,10 +64,13 @@ def plot_3d_distributions(bem, save=None):
 
 
 if __name__ == "__main__":
-    bem = BEMSolver(IEA15MW(), Nr=100, Ntheta=100)
+    bem = BEM(IEA15MW(), Nr=100, Ntheta=100)
 
-    sol = bem.solve(pitch=0, tsr=8, yaw=np.deg2rad(45))
+    yaws = np.arange(-50, 51, 1)
 
-    fn = FIGDIR / f"example_03_yawed_distributions.png"
+    for i, yaw in enumerate(tqdm(yaws)):
+        converged = bem.solve(pitch=0, tsr=8, yaw=np.deg2rad(yaw))
 
-    plot_3d_distributions(sol, save=fn)
+        fn = FIGDIR / f"yawed_distributions_{i:03}.png"
+
+        plot_3d_distributions(bem, save=fn)

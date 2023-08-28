@@ -1,9 +1,34 @@
 import numpy as np
-from .Utilities import aggregate, adaptivefixedpointiteration
-from . import ThrustInduction, TipLoss, Windfield
+from .Utilities import adaptivefixedpointiteration
+from . import ThrustInduction, TipLoss
+from .BEMSolution import BEMSolution
 
 
-class BEM:
+class _BEMSolverBase:
+    def __init__(
+        self,
+        rotor,
+        Cta_method="mike_corrected",
+        tiploss="PrandtlRootTip",
+        Nr=20,
+        Ntheta=21,
+    ):
+        self.rotor = rotor
+
+        self.Nr, self.Ntheta = Nr, Ntheta
+
+        self.mu, self.theta, self.mu_mesh, self.theta_mesh = self.calc_gridpoints(
+            Nr, Ntheta
+        )
+
+        self.Cta_func = ThrustInduction.build_cta_model(Cta_method)
+        self.tiploss_func = TipLoss.build_tiploss_model(tiploss, rotor)
+
+        self._solidity = self.rotor.solidity(self.mu_mesh)
+
+    def solve(self):
+        ...
+
     @classmethod
     def calc_gridpoints(cls, Nr, Ntheta):
         mu = np.linspace(0.0, 1.0, Nr)
@@ -27,80 +52,22 @@ class BEM:
 
         return X, Y, Z
 
-    def __init__(
-        self,
-        rotor,
-        Cta_method="mike_corrected",
-        tiploss="tiproot",
-        Nr=20,
-        Ntheta=21,
-    ):
-        self.rotor = rotor
-
-        self.Nr, self.Ntheta = Nr, Ntheta
-
-        self.mu, self.theta, self.mu_mesh, self.theta_mesh = self.calc_gridpoints(Nr, Ntheta)
-
-        self.pitch = None
-        self.tsr = None
-        self.yaw = None
-
-        if Cta_method == "HAWC2":
-            self.Cta_func = ThrustInduction.HAWC2
-        elif Cta_method == "mike":
-            self.Cta_func = ThrustInduction.mike
-        elif Cta_method == "mike_corrected":
-            self.Cta_func = ThrustInduction.mike_corrected
-        elif Cta_method == "fixed":
-            self.Cta_func = ThrustInduction.fixed_induction
-        else:
-            raise ValueError(f"Cta method {Cta_method} not found.")
-
-        if tiploss is None:
-            self.tiploss_func = TipLoss.NoTiploss
-        elif tiploss == "prandtl":
-            self.tiploss_func = TipLoss.PrandtlTiploss
-        elif tiploss == "tiproot":
-            self.tiploss_func = TipLoss.PrandtlTipAndRootLossGenerator(
-                self.rotor.hub_radius / self.rotor.R
-            )
-        else:
-            raise ValueError(f"tip loss method {tiploss} not found.")
-
-        self.reset()
-
     def _sample_windfield(self, windfield):
-        _X, _Y, _Z = self.gridpoints_cart(self.yaw)
+        yaw = 0  # To do: change grid points based on yaw angle.
+        _X, _Y, _Z = self.gridpoints_cart(yaw)
         Y = _Y
-        Z = self.rotor.hub_height / self.rotor.R  + _Z
+        Z = self.rotor.hub_height / self.rotor.R + _Z
 
         U = windfield.wsp(Y, Z)
         wdir = windfield.wdir(Y, Z)
 
         return U, wdir
 
-    def reset(self):
-        self._a = 1 / 3 * np.ones((self.Nr, self.Ntheta))
-        self._aprime = np.zeros((self.Nr, self.Ntheta))
-        self._phi = np.zeros((self.Nr, self.Ntheta))
-        self._aoa = np.zeros((self.Nr, self.Ntheta))
-        self._Vax = np.zeros((self.Nr, self.Ntheta))
-        self._Vtan = np.zeros((self.Nr, self.Ntheta))
-        self._W = np.zeros((self.Nr, self.Ntheta))
-        self._Cax = np.zeros((self.Nr, self.Ntheta))
-        self._Ctan = np.zeros((self.Nr, self.Ntheta))
-        self._tiploss = np.zeros((self.Nr, self.Ntheta))
-        self.solidity = np.zeros((self.Nr, self.Ntheta))
-        self.converged = False
 
-    def solve(self, pitch: float, tsr: float, yaw: float, windfield=None, reset=True) -> bool:
-        if reset:
-            self.reset()
-
-        self.pitch = pitch
-        self.tsr = tsr
-        self.yaw = yaw
-
+class BEMSolver(_BEMSolverBase):
+    def solve(
+        self, pitch: float, tsr: float, yaw: float = 0.0, windfield=None
+    ) -> BEMSolution:
         if callable(windfield):
             self.U, self.wdir = self._sample_windfield(windfield)
         elif windfield:
@@ -108,9 +75,22 @@ class BEM:
         else:
             self.U, self.wdir = np.ones_like(self.mu_mesh), np.zeros_like(self.mu_mesh)
 
+        self.sol = BEMSolution(
+            self.mu,
+            self.theta,
+            self.mu_mesh,
+            self.theta_mesh,
+            pitch,
+            tsr,
+            yaw,
+            self.U,
+            self.wdir,
+            self.rotor.R,
+        )
+        self.sol.solidity = self._solidity
+
         a0 = 1 / 3 * np.ones((self.Nr, self.Ntheta))
         aprime0 = np.zeros((self.Nr, self.Ntheta))
-
         a_init = np.stack([a0, aprime0])
 
         try:
@@ -121,181 +101,47 @@ class BEM:
             converged = False
         except ValueError:
             converged = False
-        self.converged = converged
+        self.sol.converged = converged
 
-        return self.converged
+        return self.sol
 
     def bem_iterate(self, a_input):
-        self._a, self._aprime = a_input
+        sol = self.sol
 
-        local_yaw = self.wdir - self.yaw
-        self._Vax = self.U * (
-            (1 - self._a)
-            * np.cos(local_yaw * np.cos(self.theta_mesh))
-            * np.cos(local_yaw * np.sin(self.theta_mesh))
+        sol._a, sol._aprime = a_input
+
+        local_yaw = sol.wdir - sol.yaw
+        sol._Vax = sol.U * (
+            (1 - sol._a)
+            * np.cos(local_yaw * np.cos(sol.theta_mesh))
+            * np.cos(local_yaw * np.sin(sol.theta_mesh))
         )
-        self._Vtan = (1 + self._aprime) * self.tsr * self.mu_mesh - self.U * (
-            1 - self._a
-        ) * np.cos(local_yaw * np.sin(self.theta_mesh)) * np.sin(
-            local_yaw * np.cos(self.theta_mesh)
+        sol._Vtan = (1 + sol._aprime) * sol.tsr * sol.mu_mesh - sol.U * (
+            1 - sol._a
+        ) * np.cos(local_yaw * np.sin(sol.theta_mesh)) * np.sin(
+            local_yaw * np.cos(sol.theta_mesh)
         )
-        self._W = np.sqrt(self._Vax**2 + self._Vtan**2)
+        sol._W = np.sqrt(sol._Vax**2 + sol._Vtan**2)
 
         # inflow angle
-        self._phi = np.arctan2(self._Vax, self._Vtan)
-        self._aoa = self._phi - self.rotor.twist(self.mu_mesh) - self.pitch
-        self._aoa = np.clip(self._aoa, -np.pi / 2, np.pi / 2)
+        sol._phi = np.arctan2(sol._Vax, sol._Vtan)
+        sol._aoa = sol._phi - self.rotor.twist(sol.mu_mesh) - sol.pitch
+        sol._aoa = np.clip(sol._aoa, -np.pi / 2, np.pi / 2)
 
         # Lift and drag coefficients
-        self._Cl, self._Cd = self.rotor.clcd(self.mu_mesh, self._aoa)
+        sol._Cl, sol._Cd = self.rotor.clcd(sol.mu_mesh, sol._aoa)
 
         # axial and tangential force coefficients
-        self._Cax = self._Cl * np.cos(self._phi) + self._Cd * np.sin(self._phi)
-        self._Ctan = self._Cl * np.sin(self._phi) - self._Cd * np.cos(self._phi)
-
-        self.solidity = self.rotor.solidity(self.mu_mesh)
+        sol._Cax = sol._Cl * np.cos(sol._phi) + sol._Cd * np.sin(sol._phi)
+        sol._Ctan = sol._Cl * np.sin(sol._phi) - sol._Cd * np.cos(sol._phi)
 
         # Tip-loss correction
-        self._tiploss = self.tiploss_func(self.mu_mesh, self._phi)
+        sol._tiploss = self.tiploss_func(sol.mu_mesh, sol._phi)
 
-        a_new = self.Cta_func(self)
+        a_new = self.Cta_func(sol)
 
-        aprime_new = np.zeros_like(self._a)
+        aprime_new = np.zeros_like(sol._a)
 
-        residual = np.stack([a_new - self._a, aprime_new - self._aprime])
+        residual = np.stack([a_new - sol._a, aprime_new - sol._aprime])
 
         return residual
-
-    def Ct(self, agg=None):
-        ddCt = self._W**2 * self.solidity * self._Cax
-        return aggregate(self.mu, self.theta_mesh, ddCt, agg)
-
-    def Ctprime(self, agg=None):
-        Ct = self.Ct(agg=agg)
-        a = self.a(agg=agg)
-        Ctprime = Ct / ((1 - a) ** 2 * np.cos(self.yaw) ** 2)
-        return Ctprime
-
-    def Cp(self, agg=None):
-        ddCp = self.tsr * self._W**2 * self.solidity * self._Ctan * self.mu_mesh
-        return aggregate(self.mu, self.theta_mesh, ddCp, agg)
-
-    def Cq(self, agg=None):
-        ddCq = self._W**2 * self.solidity * self._Ctan * self.mu_mesh
-        return aggregate(self.mu, self.theta_mesh, ddCq, agg)
-
-    def a(self, agg=None):
-        return aggregate(self.mu, self.theta_mesh, self._a, agg)
-
-    def aprime(self, agg=None):
-        return aggregate(self.mu, self.theta_mesh, self._aprime, agg)
-
-    def phi(self, agg=None):
-        return aggregate(self.mu, self.theta_mesh, self._phi, agg)
-
-    def aoa(self, agg=None):
-        return aggregate(self.mu, self.theta_mesh, self._aoa, agg)
-
-    def Vax(self, agg=None):
-        return aggregate(self.mu, self.theta_mesh, self._Vax, agg)
-
-    def Vtan(self, agg=None):
-        return aggregate(self.mu, self.theta_mesh, self._Vtan, agg)
-
-    def W(self, agg=None):
-        return aggregate(self.mu, self.theta_mesh, self._W, agg)
-
-    def Cax(self, agg=None):
-        return aggregate(self.mu, self.theta_mesh, self._Cax, agg)
-
-    def tiploss(self, agg=None):
-        return aggregate(self.mu, self.theta_mesh, self._tiploss, agg)
-
-    def Ctan(self, agg=None):
-        return aggregate(self.mu, self.theta_mesh, self._Ctan, agg)
-
-    def Cl(self, agg=None):
-        return aggregate(self.mu, self.theta_mesh, self._Cl, agg)
-
-    def Cd(self, agg=None):
-        return aggregate(self.mu, self.theta_mesh, self._Cd, agg)
-
-    def Fax(self, U_inf, agg=None, rho=1.293):
-        R = self.rotor.R
-        dR = np.diff(self.mu)[0] * R
-        dtheta = np.diff(self.theta)[0]
-
-        if agg is None or (agg == "rotor"):
-            A = np.pi * R**2
-        elif agg == "azim":
-            A = self.mu * R * dR
-        elif agg == "segment":
-            A = self.mu_mesh * R * dR * dtheta
-        else:
-            ValueError
-
-        return 0.5 * rho * U_inf**2 * self.Cax(agg) * A
-
-    def Ftan(self, U_inf, agg=None, rho=1.293):
-        R = self.rotor.R
-        dR = np.diff(self.mu)[0] * R
-        dtheta = np.diff(self.theta)[0]
-
-        if agg is None or (agg == "rotor"):
-            A = np.pi * R**2
-        elif agg == "azim":
-            A = self.mu * R * dR
-        elif agg == "segment":
-            A = self.mu_mesh * R * dR * dtheta
-        else:
-            ValueError
-
-        return 0.5 * rho * U_inf**2 * self.Ctan(agg) * A
-
-    def thrust(self, U_inf, agg=None, rho=1.293):
-        R = self.rotor.R
-        dR = np.diff(self.mu)[0] * R
-        dtheta = np.diff(self.theta)[0]
-
-        if agg is None or (agg == "rotor"):
-            A = np.pi * R**2
-        elif agg == "azim":
-            A = self.mu * R * dR
-        elif agg == "segment":
-            A = self.mu_mesh * R * dR * dtheta
-        else:
-            ValueError
-
-        return 0.5 * rho * U_inf**2 * self.Ct(agg) * A
-
-    def power(self, U_inf, agg=None, rho=1.293):
-        R = self.rotor.R
-        dR = np.diff(self.mu)[0] * R
-        dtheta = np.diff(self.theta)[0]
-
-        if agg is None or (agg == "rotor"):
-            A = np.pi * R**2
-        elif agg == "azim":
-            A = self.mu * R * dR
-        elif agg == "segment":
-            A = self.mu_mesh * R * dR * dtheta
-        else:
-            ValueError
-
-        return 0.5 * rho * U_inf**3 * self.Cp(agg) * A
-
-    def torque(self, U_inf, rho=1.293):
-        R = self.rotor.R
-        rotor_speed = self.tsr * U_inf / R
-
-        return self.power(U_inf, rho=rho) / rotor_speed
-
-    def u4(self):
-        return 1 - 0.5 * self.Ct() / (1 - self.a())
-
-    def v4(self):
-        # POSSIBLE SIGN ERROR
-        return -0.25 * self.Ct() * np.sin(self.yaw)
-
-    def REWS(self):
-        return aggregate(self.mu, self.theta, self.U)

@@ -7,7 +7,6 @@ fn_IEA10MW = Path(__file__).parent / "IEA-10-198-RWT.yaml"
 fn_IEA3_4MW = Path(__file__).parent / "IEA-3.4-130-RWT.yaml"
 
 
-
 def IEA15MW():
     with open(fn_IEA15MW, "r") as f:
         data = yaml.safe_load(f)

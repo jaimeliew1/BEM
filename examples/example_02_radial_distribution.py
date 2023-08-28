@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 
-from MITBEM.BEM import BEM
+from MITBEM.BEM import BEMSolver
 from MITBEM.ReferenceTurbines import IEA15MW
 
 FIGDIR = Path("fig")
@@ -11,23 +11,23 @@ FIGDIR.mkdir(exist_ok=True, parents=True)
 
 
 if __name__ == "__main__":
-    bem = BEM(IEA15MW())
+    bem = BEMSolver(IEA15MW())
 
-    converged = bem.solve(pitch=0, tsr=8, yaw=0)
+    sol = bem.solve(pitch=0, tsr=8, yaw=0)
 
     to_plot = {
-        "a": bem.a(agg="azim"),
-        "phi": bem.phi(agg="azim"),
-        "Vax": bem.Vax(agg="azim"),
-        "Vtan": bem.Vtan(agg="azim"),
-        "W": bem.W(agg="azim"),
-        "Cax": bem.Cax(agg="azim"),
-        "Ctan": bem.Ctan(agg="azim"),
-        "Cl": bem.Cl(agg="azim"),
-        "Cd": bem.Cd(agg="azim"),
-        "Ct": bem.Ct(agg="azim"),
-        "Ctprime": bem.Ctprime(agg="azim"),
-        "Cp": bem.Cp(agg="azim"),
+        "a": sol.a(agg="azim"),
+        "phi": sol.phi(agg="azim"),
+        "Vax": sol.Vax(agg="azim"),
+        "Vtan": sol.Vtan(agg="azim"),
+        "W": sol.W(agg="azim"),
+        "Cax": sol.Cax(agg="azim"),
+        "Ctan": sol.Ctan(agg="azim"),
+        "Cl": sol.Cl(agg="azim"),
+        "Cd": sol.Cd(agg="azim"),
+        "Ct": sol.Ct(agg="azim"),
+        "Ctprime": sol.Ctprime(agg="azim"),
+        "Cp": sol.Cp(agg="azim"),
     }
 
     fig, axes = plt.subplots(len(to_plot), 1, sharex=True, figsize=(4, 10))

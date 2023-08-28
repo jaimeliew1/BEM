@@ -7,21 +7,21 @@ import matplotlib.pyplot as plt
 import polars as pl
 from tqdm import tqdm
 
-from MITBEM.BEM import BEM
+from MITBEM.BEM import BEMSolver
 from MITBEM.ReferenceTurbines import IEA15MW
 
 FIGDIR = Path("fig")
 FIGDIR.mkdir(exist_ok=True, parents=True)
 
 ROTOR = IEA15MW()
+bem = BEMSolver(ROTOR)
 
 
 def func(x):
     pitch, tsr = x
-    bem = BEM(ROTOR)
-    bem.solve(pitch=np.deg2rad(pitch), tsr=tsr, yaw=0)
+    sol = bem.solve(pitch=np.deg2rad(pitch), tsr=tsr, yaw=0)
 
-    return dict(pitch=pitch, tsr=tsr, Cp=bem.Cp(), Ct=bem.Ct())
+    return dict(pitch=pitch, tsr=tsr, Cp=sol.Cp(), Ct=sol.Ct())
 
 
 if __name__ == "__main__":

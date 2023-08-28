@@ -8,7 +8,7 @@ import seaborn as sns
 from tqdm import tqdm
 
 from MITBEM.ReferenceTurbines import IEA15MW
-from MITBEM.BEM import BEM
+from MITBEM.BEM import BEMSolver
 from MITBEM.Windfield import ShearVeer
 from MITBEM.Utilities import fixedpointiteration
 
@@ -34,33 +34,31 @@ to_plot = {
 }
 
 pitch_opt, tsr_opt = calc_optimal_setpoint(rotor)
-bem = BEM(rotor)
-bem.solve(pitch_opt, tsr_opt, 0)
-Cp_opt = bem.Cp()
+Cp_opt = BEMSolver(rotor).solve(pitch_opt, tsr_opt).Cp()
 
 
 def calc(x):
     shear_exp, dveerdz = x
     windfield = ShearVeer(rotor.hub_height / rotor.R, shear_exp, rotor.R * dveerdz)
-    bem = BEM(rotor)
+    bem = BEMSolver(rotor)
 
     def torque_control_residual(tsr):
-        converged = bem.solve(pitch_opt, tsr, YAW, windfield)
+        sol = bem.solve(pitch_opt, tsr, YAW, windfield)
 
-        if converged:
-            return np.cbrt(bem.Cp() / Cp_opt * tsr_opt**3) - tsr
+        if sol.converged:
+            return np.cbrt(sol.Cp() / Cp_opt * tsr_opt**3) - tsr
 
     _, tsr = fixedpointiteration(torque_control_residual, 7, relax=0.5)
-    bem.solve(pitch_opt, tsr, YAW, windfield)
+    sol = bem.solve(pitch_opt, tsr, YAW, windfield)
 
     return dict(
         exp=shear_exp,
         veer=dveerdz,
-        Cp=bem.Cp(),
-        Ct=bem.Ct(),
-        Ctprime=bem.Ctprime(),
-        tsr=bem.tsr,
-        a=bem.a(),
+        Cp=sol.Cp(),
+        Ct=sol.Ct(),
+        Ctprime=sol.Ctprime(),
+        tsr=sol.tsr,
+        a=sol.a(),
     )
 
 
